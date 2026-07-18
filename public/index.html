@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html lang="km" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Splitify - Professional Video Splitter</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f5f3ff',
+              100: '#ede9fe',
+              200: '#ddd6fe',
+              300: '#c4b5fd',
+              400: '#a78bfa',
+              500: '#8b5cf6',
+              600: '#7c3aed',
+              700: '#6d28d9',
+              800: '#5b21b6',
+              900: '#4c1d95',
+              950: '#2e1065',
+            }
+          },
+          fontFamily: {
+            sans: ['Outfit', 'Kantumruy Pro', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Google Fonts: Outfit & Kantumruy Pro (for Khmer) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:ital,wght@0,100..700;1,100..700&family=Outfit:wght@100..900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body {
+      font-family: 'Outfit', 'Kantumruy Pro', sans-serif;
+      background: radial-gradient(circle at top center, #1e1b4b 0%, #09090b 100%);
+    }
+    .glass-card {
+      background: rgba(15, 15, 20, 0.7);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(63, 63, 70, 0.4);
+    }
+    .glow-purple:hover {
+      box-shadow: 0 0 25px rgba(139, 92, 246, 0.35);
+    }
+  </style>
+</head>
+<body class="min-h-screen text-zinc-100 flex flex-col justify-between selection:bg-brand-600 selection:text-white">
+
+
+
+  <!-- Header -->
+  <header class="border-b border-zinc-800/80 bg-zinc-950/50 backdrop-blur-md py-4 px-6">
+    <div class="max-w-6xl mx-auto flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <div class="bg-gradient-to-tr from-brand-600 to-indigo-500 p-2.5 rounded-xl shadow-lg shadow-brand-500/20">
+          <i data-lucide="scissors" class="w-6 h-6 text-white transform -rotate-45"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl font-extrabold tracking-tight bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">Splitify</h1>
+          <p class="text-[10px] text-brand-400 font-medium tracking-widest uppercase">Video Splitter Tool</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        Server Connected
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-grow flex items-center justify-center py-10 px-4">
+    <div class="w-full max-w-2xl glass-card rounded-3xl p-8 shadow-2xl transition-all duration-300 relative overflow-hidden">
+      
+      <!-- Ambient Glow Effects inside Card -->
+      <div class="absolute -top-24 -left-24 w-48 h-48 bg-brand-500/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -right-24 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+      <!-- ==================== STATE 1: HOME ==================== -->
+      <div id="state-home" class="space-y-6">
+        <div class="text-center space-y-2">
+          <h2 class="text-2xl font-bold text-white">បំបែកវីដេអូបានលឿន និងរក្សាគុណភាពដើម</h2>
+          <p class="text-zinc-400 text-sm">បញ្ចូលឯកសារវីដេអូ ឬជ្រើសរើសទីតាំងរបស់វា ដើម្បីចាប់ផ្ដើមបំបែកជាចំណែកៗ</p>
+        </div>
+
+        <!-- Drag & Drop Zone -->
+        <input type="file" id="file-input" class="hidden" accept="video/*">
+        <div id="drop-zone" class="border-2 border-dashed border-zinc-700/80 hover:border-brand-500 hover:bg-brand-500/5 rounded-2xl p-10 text-center cursor-pointer transition-all group relative">
+          <div class="space-y-4">
+            <div class="w-16 h-16 mx-auto bg-zinc-800/80 rounded-2xl flex items-center justify-center text-zinc-400 group-hover:text-brand-400 group-hover:bg-brand-950/30 transition-all">
+              <i data-lucide="video" class="w-8 h-8"></i>
+            </div>
+            <div>
+              <p class="text-base font-semibold text-zinc-200">អូស និងទម្លាក់ឯកសារវីដេអូនៅទីនេះ</p>
+              <p class="text-xs text-zinc-500 mt-1">ឬចុចដើម្បីស្វែងរកឯកសារពីកុំព្យូទ័រ</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center my-4">
+          <div class="flex-grow border-t border-zinc-800"></div>
+          <span class="px-4 text-xs text-zinc-500 uppercase tracking-widest font-semibold">ឬ</span>
+          <div class="flex-grow border-t border-zinc-800"></div>
+        </div>
+
+        <!-- File Path Input -->
+        <div class="space-y-2">
+          <label for="path-input" class="text-xs font-semibold text-zinc-400 uppercase tracking-wider block">បញ្ចូលផ្លូវឯកសារផ្ទាល់ (Local Path - លឿនបំផុតសម្រាប់វីដេអូធំ)</label>
+          <div class="flex gap-2">
+            <div class="relative flex-grow">
+              <i data-lucide="folder" class="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-zinc-500"></i>
+              <input type="text" id="path-input" 
+                     placeholder="ឧទាហរណ៍៖ D:\Videos\movie.mp4" 
+                     class="w-full bg-zinc-950/60 border border-zinc-800 focus:border-brand-500 rounded-xl py-3 pl-11 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 transition-all placeholder:text-zinc-600">
+            </div>
+            <button onclick="handleBrowseFile()" class="bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-300 font-semibold px-4 rounded-xl text-xs transition-all border border-zinc-700/40 whitespace-nowrap">
+              ស្វែងរកឯកសារ
+            </button>
+            <button onclick="handleLoadPath()" class="bg-brand-600 hover:bg-brand-500 active:scale-95 text-white font-semibold px-6 rounded-xl text-sm transition-all shadow-lg shadow-brand-600/10 whitespace-nowrap">
+              យល់ព្រម
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================== STATE 2: LOADED & CONFIG ==================== -->
+      <div id="state-loaded" class="hidden space-y-6">
+        <div class="flex justify-between items-center border-b border-zinc-800/80 pb-4">
+          <button onclick="resetToHome()" class="flex items-center gap-2 text-zinc-400 hover:text-zinc-200 text-xs transition-colors">
+            <i data-lucide="arrow-left" class="w-4 h-4"></i> ប្ដូរវីដេអូថ្មី
+          </button>
+          <span class="text-xs text-brand-400 font-semibold px-2.5 py-1 rounded-full bg-brand-500/10 border border-brand-500/20">បានបញ្ចូលរួចរាល់</span>
+        </div>
+
+        <!-- Video Info -->
+        <div class="bg-zinc-950/40 border border-zinc-800/50 rounded-2xl p-4 flex gap-4 items-center">
+          <div class="w-28 aspect-video bg-zinc-800 rounded-xl relative overflow-hidden flex items-center justify-center border border-zinc-700/50 flex-shrink-0">
+            <div class="absolute inset-0 bg-cover bg-center opacity-60" style="background-image: url('https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?q=80&w=300&auto=format&fit=crop');"></div>
+            <i data-lucide="play-circle" class="w-8 h-8 text-white z-10 opacity-80 shadow-md"></i>
+          </div>
+          <div class="space-y-1 min-w-0 flex-grow">
+            <h3 id="info-name" class="font-bold text-white text-base truncate">holiday_trip_2026.mp4</h3>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-zinc-400">
+              <p class="flex items-center gap-1.5"><i data-lucide="clock" class="w-3.5 h-3.5 text-zinc-500"></i> <span id="info-duration">01:15:30</span></p>
+              <p class="flex items-center gap-1.5"><i data-lucide="monitor" class="w-3.5 h-3.5 text-zinc-500"></i> <span id="info-resolution">1920x1080 (1080p)</span></p>
+              <p class="flex items-center gap-1.5"><i data-lucide="database" class="w-3.5 h-3.5 text-zinc-500"></i> <span id="info-size">2.45 GB</span></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Split Settings -->
+        <div class="space-y-4">
+          <h4 class="text-sm font-bold text-zinc-300 uppercase tracking-wider">ការកំណត់ការបំបែកវីដេអូ</h4>
+          
+          <div class="grid grid-cols-3 gap-3">
+            <!-- Mode 1: Equal Parts -->
+            <label class="cursor-pointer">
+              <input type="radio" name="split-mode" value="parts" checked class="peer sr-only">
+              <div class="p-4 border border-zinc-800 bg-zinc-950/30 peer-checked:border-brand-500 peer-checked:bg-brand-500/5 rounded-xl text-center hover:bg-zinc-900/50 transition-all h-full flex flex-col justify-between">
+                <i data-lucide="layout-grid" class="w-5 h-5 mx-auto text-zinc-400 peer-checked:text-brand-400 mb-2"></i>
+                <span class="text-xs font-bold text-zinc-300 block">ជាចំណែកស្មើគ្នា</span>
+              </div>
+            </label>
+
+            <!-- Mode 2: By Duration -->
+            <label class="cursor-pointer">
+              <input type="radio" name="split-mode" value="duration" class="peer sr-only">
+              <div class="p-4 border border-zinc-800 bg-zinc-950/30 peer-checked:border-brand-500 peer-checked:bg-brand-500/5 rounded-xl text-center hover:bg-zinc-900/50 transition-all h-full flex flex-col justify-between">
+                <i data-lucide="hourglass" class="w-5 h-5 mx-auto text-zinc-400 peer-checked:text-brand-400 mb-2"></i>
+                <span class="text-xs font-bold text-zinc-300 block">តាមរយៈពេលកំណត់</span>
+              </div>
+            </label>
+
+            <!-- Mode 3: Custom Ranges -->
+            <label class="cursor-pointer">
+              <input type="radio" name="split-mode" value="custom" class="peer sr-only">
+              <div class="p-4 border border-zinc-800 bg-zinc-950/30 peer-checked:border-brand-500 peer-checked:bg-brand-500/5 rounded-xl text-center hover:bg-zinc-900/50 transition-all h-full flex flex-col justify-between">
+                <i data-lucide="sliders" class="w-5 h-5 mx-auto text-zinc-400 peer-checked:text-brand-400 mb-2"></i>
+                <span class="text-xs font-bold text-zinc-300 block">ចន្លោះពេលផ្ទាល់ខ្លួន</span>
+              </div>
+            </label>
+          </div>
+
+          <!-- Dynamic Mode Inputs -->
+          <div class="bg-zinc-950/20 border border-zinc-800/80 rounded-2xl p-5 space-y-4">
+            <!-- Input for Equal Parts -->
+            <div id="input-group-parts" class="space-y-2">
+              <label class="text-xs font-semibold text-zinc-400 block">ចំនួនភាគដែលចង់បំបែក៖</label>
+              <div class="flex items-center gap-3">
+                <input type="number" id="input-parts-val" value="5" min="2" max="100" class="w-24 bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-4 py-2.5 text-center font-bold text-white focus:outline-none transition-all">
+                <span class="text-sm text-zinc-400">ភាគ</span>
+              </div>
+            </div>
+
+            <!-- Input for Duration -->
+            <div id="input-group-duration" class="hidden space-y-2">
+              <label class="text-xs font-semibold text-zinc-400 block">រយៈពេលក្នុងមួយភាគ៖</label>
+              <div class="flex items-center gap-3">
+                <input type="number" id="input-duration-val" value="15" min="1" max="1440" class="w-24 bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-4 py-2.5 text-center font-bold text-white focus:outline-none transition-all">
+                <span class="text-sm text-zinc-400">នាទី</span>
+              </div>
+            </div>
+
+            <!-- Input for Custom Ranges -->
+            <div id="input-group-custom" class="hidden space-y-2">
+              <label class="text-xs font-semibold text-zinc-400 block">បញ្ចូលចំណុចពេលវេលាកាត់ (បំបែកដោយសញ្ញាក្បៀស ៖ hh:mm:ss ឬ mm:ss)៖</label>
+              <input type="text" id="input-custom-val" value="00:15:00, 00:30:00, 00:45:00" placeholder="ឧ. 00:15:00, 00:30:00, 00:45:00" class="w-full bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-4 py-2.5 text-white focus:outline-none transition-all placeholder:text-zinc-700">
+              <p class="text-[11px] text-zinc-500">វីដេអូនឹងត្រូវបំបែកតាមចំណុចដែលបានកំណត់ទាំងនេះ។</p>
+            </div>
+
+            <!-- Overlap Input Section -->
+            <div class="border-t border-zinc-800/80 pt-4 space-y-2">
+              <label class="text-xs font-bold text-brand-400 uppercase tracking-wider block flex items-center gap-1.5">
+                <i data-lucide="layers" class="w-4 h-4"></i> រយៈពេលត្រួតគ្នារវាងភាគ (Overlap Time)
+              </label>
+              <div class="flex items-center gap-3">
+                <input type="number" id="input-overlap-val" value="10" min="0" max="120" class="w-24 bg-zinc-950 border border-zinc-800 focus:border-brand-500 rounded-xl px-4 py-2.5 text-center font-bold text-white focus:outline-none transition-all">
+                <span class="text-sm text-zinc-300">វិនាទី (ឧទាហរណ៍៖ 10s ជួយកុំឱ្យបាត់ខ្លឹមសារពេលទស្សនិកជនមើលភាគបន្ទាប់)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview Split Info -->
+        <div class="space-y-2">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold text-zinc-300 uppercase tracking-wider">ព័ត៌មានលម្អិតមុនបំបែក (Preview)</span>
+            <span class="text-[11px] text-zinc-500">ទំហំគណនាជាមធ្យម <b>~490 MB/ភាគ</b></span>
+          </div>
+          <div id="preview-list-container" class="max-h-48 overflow-y-auto border border-zinc-800/80 rounded-xl divide-y divide-zinc-800/50">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Name customization and output folder -->
+        <div class="bg-zinc-950/20 border border-zinc-800/80 rounded-2xl p-5 space-y-4">
+          <!-- Custom Filename -->
+          <div class="space-y-2">
+            <label class="text-xs font-semibold text-zinc-400 uppercase tracking-wider block">ឈ្មោះឯកសារថ្មី (Output Filename Prefix)</label>
+            <div class="relative">
+              <i data-lucide="edit-3" class="w-4.5 h-4.5 absolute left-3.5 top-1/2 transform -translate-y-1/2 text-zinc-500"></i>
+              <input type="text" id="output-name-input" placeholder="ឧ. កុលាបក្រហម" class="w-full bg-zinc-950/60 border border-zinc-800 focus:border-brand-500 rounded-xl py-2.5 pl-11 pr-4 text-xs focus:outline-none text-zinc-300 focus:ring-1 focus:ring-brand-500 transition-all">
+            </div>
+            <p class="text-[10px] text-zinc-500">ឈ្មោះឯកសារលទ្ធផលនឹងត្រូវសរសេរជា៖ <span class="text-brand-400 font-semibold font-mono">Part_1_កុលាបក្រហម.mp4</span></p>
+          </div>
+
+          <!-- Output Folder -->
+          <div class="space-y-2">
+            <label class="text-xs font-semibold text-zinc-400 uppercase tracking-wider block">ថតលទ្ធផល (Output Folder)</label>
+            <div class="flex gap-2">
+              <input type="text" id="output-folder-input" value="C:\Users\User\Desktop\SplitMaster\output" class="flex-grow bg-zinc-950/60 border border-zinc-800 focus:border-brand-500 rounded-xl py-2.5 px-4 text-xs focus:outline-none text-zinc-300">
+              <button onclick="handleBrowseFolder()" class="bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-300 font-semibold px-4 rounded-xl text-xs transition-all border border-zinc-700/40">
+                ផ្លាស់ប្ដូរ
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button onclick="handleStartSplit()" class="w-full bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 active:scale-[0.98] text-white font-bold py-4 px-6 rounded-2xl transition-all shadow-xl shadow-brand-600/20 glow-purple flex items-center justify-center gap-2">
+          <i data-lucide="zap" class="w-5 h-5 text-yellow-300 fill-yellow-300"></i>
+          ចាប់ផ្ដើមបំបែកវីដេអូ (Split Video)
+        </button>
+      </div>
+
+      <!-- ==================== STATE 3: PROCESSING ==================== -->
+      <div id="state-processing" class="hidden space-y-8 py-4">
+        <div class="text-center space-y-2">
+          <div class="inline-flex p-3 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400 animate-spin mb-2">
+            <i data-lucide="loader-2" class="w-8 h-8"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white tracking-wide">កំពុងបំបែកវីដេអូ...</h2>
+          <p class="text-zinc-400 text-sm">សូមកុំបិទកម្មវិធី វីដេអូកំពុងត្រូវបានបំបែកដោយមិនបាត់គុណភាព</p>
+        </div>
+
+        <!-- Progress Bar & Info -->
+        <div class="space-y-3 max-w-md mx-auto">
+          <div class="flex justify-between items-end">
+            <span id="process-part-text" class="text-sm font-bold text-zinc-300">កំពុងបង្កើត៖ ភាគទី ៣ នៃ ៥ ភាគ</span>
+            <span id="process-percent-text" class="text-lg font-extrabold text-brand-400 font-mono">60%</span>
+          </div>
+          <!-- Progress bar container -->
+          <div class="w-full bg-zinc-950 border border-zinc-800 rounded-full h-4 overflow-hidden p-0.5">
+            <div id="process-bar" class="bg-gradient-to-r from-brand-500 to-indigo-500 h-full rounded-full transition-all duration-300" style="width: 60%;"></div>
+          </div>
+          <div class="flex justify-between text-xs text-zinc-500 font-mono mt-1">
+            <span>រយៈពេលដើរ៖ 00:12s</span>
+            <span id="process-eta">រយៈពេលនៅសល់ (ETA)៖ ~00:08s</span>
+          </div>
+        </div>
+
+        <!-- Cancel button -->
+        <div class="text-center pt-4">
+          <button onclick="handleCancelSplit()" class="bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-red-400 px-6 py-2.5 rounded-xl text-xs font-semibold transition-all inline-flex items-center gap-1.5 active:scale-95">
+            <i data-lucide="x-circle" class="w-4 h-4"></i>
+            បោះបង់ការបំបែក (Cancel)
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================== STATE 4: COMPLETED ==================== -->
+      <div id="state-completed" class="hidden space-y-6">
+        <div class="text-center space-y-2">
+          <div class="inline-flex p-4 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-2 shadow-lg shadow-emerald-500/5">
+            <i data-lucide="check-circle" class="w-10 h-10"></i>
+          </div>
+          <h2 class="text-2xl font-bold text-white tracking-wide">បំបែកវីដេអូបានជោគជ័យ!</h2>
+          <p class="text-zinc-400 text-sm">ទទួលបានឯកសារវីដេអូចំនួន <span id="completed-parts-count">4</span> នៅក្នុងថតលទ្ធផលរបស់អ្នក</p>
+        </div>
+
+        <!-- Output folder path display -->
+        <div class="bg-zinc-950/40 border border-zinc-800/80 rounded-2xl p-4 flex justify-between items-center text-xs">
+          <div class="min-w-0 flex-grow pr-4">
+            <span class="text-zinc-500 block uppercase tracking-wider font-semibold text-[10px] mb-1">ថតលទ្ធផល (Output Folder)</span>
+            <span id="completed-folder-path" class="text-zinc-300 font-mono break-all font-semibold">C:\Users\User\Desktop\SplitMaster\output</span>
+          </div>
+          <button onclick="handleOpenFolder()" class="bg-brand-600/10 border border-brand-500/20 hover:bg-brand-600/20 text-brand-400 hover:text-brand-300 px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0 active:scale-95">
+            <i data-lucide="folder-open" class="w-4 h-4"></i> បើក Folder
+          </button>
+        </div>
+
+        <!-- Output File List with mock Play button -->
+        <div class="space-y-3">
+          <span class="text-xs font-bold text-zinc-400 uppercase tracking-wider block">បញ្ជីឯកសារដែលបានបង្កើត៖</span>
+          <div id="completed-list-container" class="space-y-2 max-h-52 overflow-y-auto pr-1">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Action Button: Split Another -->
+        <button onclick="resetToHome()" class="w-full bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-200 font-bold py-3.5 px-6 rounded-2xl transition-all flex items-center justify-center gap-2 active:scale-95">
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+          បំបែកវីដេអូផ្សេងទៀត (Split Another Video)
+        </button>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Video Play Modal (Mockup) -->
+  <div id="video-modal" class="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 hidden backdrop-blur-sm">
+    <div class="w-full max-w-3xl bg-zinc-950 border border-zinc-800 rounded-3xl overflow-hidden relative shadow-2xl">
+      <div class="p-4 border-b border-zinc-800 flex justify-between items-center">
+        <h3 id="modal-title" class="font-bold text-sm text-zinc-300">holiday_trip_2026_part1.mp4</h3>
+        <button onclick="closeVideoModal()" class="text-zinc-500 hover:text-zinc-300"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div class="aspect-video bg-black flex items-center justify-center">
+        <video id="modal-video-player" controls class="w-full h-full object-contain"></video>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="py-6 text-center text-xs text-zinc-600 border-t border-zinc-900 bg-zinc-950/20">
+    <p>© 2026 Splitify. Built with ❤️ for speed and quality.</p>
+  </footer>
+
+  <!-- Mockup Interactions JavaScript -->
+  <script>
+    // Initialize Lucide Icons
+    lucide.createIcons();
+
+    // Global variables
+    let videoDuration = 0;
+    let videoFilename = "";
+    let loadedVideoPath = "";
+    let calculatedParts = [];
+    let eventSource = null;
+    let completedFolder = "";
+
+    // Elements
+    const states = {
+      home: document.getElementById('state-home'),
+      loaded: document.getElementById('state-loaded'),
+      processing: document.getElementById('state-processing'),
+      completed: document.getElementById('state-completed')
+    };
+
+    // State Switcher Function
+    function switchState(stateName) {
+      Object.keys(states).forEach(key => {
+        if (key === stateName) {
+          states[key].classList.remove('hidden');
+        } else {
+          states[key].classList.add('hidden');
+        }
+      });
+      
+      if (stateName === 'loaded') {
+        updatePreview();
+      }
+    }
+
+    function resetToHome() {
+      loadedVideoPath = "";
+      videoFilename = "";
+      videoDuration = 0;
+      calculatedParts = [];
+      
+      document.getElementById('path-input').value = "";
+      document.getElementById('file-input').value = "";
+      document.getElementById('output-name-input').value = "";
+      
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+      
+      switchState('home');
+    }
+
+    // Load config on startup
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/config');
+        const data = await res.json();
+        if (data.default_output_folder) {
+          document.getElementById('output-folder-input').value = data.default_output_folder;
+        }
+      } catch (e) {
+        console.error("Error loading default output folder:", e);
+      }
+    }
+    loadConfig();
+
+    // Drag and Drop simulation/handling
+    const dropZone = document.getElementById('drop-zone');
+    dropZone.addEventListener('click', () => {
+      document.getElementById('file-input').click();
+    });
+    
+    // File input change listener
+    const fileInput = document.getElementById('file-input');
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        uploadVideoFile(file);
+      }
+    });
+
+    // Drag & drop event listeners
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('border-brand-500', 'bg-brand-500/5');
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('border-brand-500', 'bg-brand-500/5');
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('border-brand-500', 'bg-brand-500/5');
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        uploadVideoFile(files[0]);
+      }
+    });
+
+    // Upload file function
+    function uploadVideoFile(file) {
+      const dropZoneContent = dropZone.innerHTML; // Save original content
+      
+      // Show upload status in drop zone
+      dropZone.innerHTML = `
+        <div class="space-y-4">
+          <div class="w-16 h-16 mx-auto bg-brand-950/30 rounded-2xl flex items-center justify-center text-brand-400 animate-pulse">
+            <i data-lucide="upload-cloud" class="w-8 h-8"></i>
+          </div>
+          <div>
+            <p class="text-base font-semibold text-brand-400">កំពុង Upload វីដេអូ... <span id="upload-percent">0%</span></p>
+            <p class="text-xs text-zinc-500 mt-1">ទំហំឯកសារ៖ ${(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+          </div>
+          <div class="w-48 bg-zinc-950 border border-zinc-800 rounded-full h-2 mx-auto overflow-hidden p-0.5">
+            <div id="upload-progress-bar" class="bg-brand-500 h-full rounded-full transition-all" style="width: 0%;"></div>
+          </div>
+        </div>
+      `;
+      lucide.createIcons();
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload', true);
+
+      xhr.upload.onprogress = function(event) {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          document.getElementById('upload-percent').textContent = `${percent}%`;
+          document.getElementById('upload-progress-bar').style.width = `${percent}%`;
+        }
+      };
+
+      xhr.onload = async function() {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          document.getElementById('path-input').value = response.path;
+          dropZone.innerHTML = dropZoneContent;
+          lucide.createIcons();
+          await handleLoadPath();
+        } else {
+          let errMsg = "មានកំហុសក្នុងការ Upload";
+          try {
+            const errData = JSON.parse(xhr.responseText);
+            errMsg = errData.detail || errMsg;
+          } catch(e) {}
+          alert("កំហុស៖ " + errMsg);
+          dropZone.innerHTML = dropZoneContent;
+          lucide.createIcons();
+        }
+      };
+
+      xhr.onerror = function() {
+        alert("កំហុស៖ មិនអាចភ្ជាប់ទៅកាន់ Server បានទេ។");
+        dropZone.innerHTML = dropZoneContent;
+        lucide.createIcons();
+      };
+
+      const formData = new FormData();
+      formData.append('file', file);
+      xhr.send(formData);
+    }
+
+    // Handle Local Path load
+    async function handleLoadPath() {
+      const pathVal = document.getElementById('path-input').value.trim();
+      if (!pathVal) {
+        alert("សូមបញ្ចូលផ្លូវឯកសារវីដេអូជាមុនសិន!");
+        return;
+      }
+      
+      const btn = document.querySelector('button[onclick="handleLoadPath()"]');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "កំពុងវិភាគ...";
+
+      try {
+        const res = await fetch('/api/load-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: pathVal })
+        });
+        
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || "មានកំហុសក្នុងការអានវីដេអូ");
+        }
+
+        loadedVideoPath = pathVal;
+        videoFilename = data.filename;
+        videoDuration = data.duration;
+
+        // Update UI
+        document.getElementById('info-name').textContent = data.filename;
+        document.getElementById('info-duration').textContent = data.duration_formatted;
+        document.getElementById('info-resolution').textContent = data.resolution;
+        document.getElementById('info-size').textContent = data.size_text;
+
+        // Set Thumbnail
+        const thumbnailImg = document.querySelector('#state-loaded .bg-cover');
+        if (thumbnailImg) {
+          thumbnailImg.style.backgroundImage = `url('${data.thumbnail_url}')`;
+        }
+
+        // Set custom output prefix
+        const dotIdx = data.filename.lastIndexOf('.');
+        document.getElementById('output-name-input').value = dotIdx !== -1 ? data.filename.substring(0, dotIdx) : data.filename;
+
+        switchState('loaded');
+      } catch (e) {
+        alert("កំហុសក្នុងការបញ្ចូលវីដេអូ៖ " + e.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    }
+
+    // Toggle Inputs depending on Mode
+    const splitRadio = document.getElementsByName('split-mode');
+    const inputParts = document.getElementById('input-group-parts');
+    const inputDuration = document.getElementById('input-group-duration');
+    const inputCustom = document.getElementById('input-group-custom');
+
+    splitRadio.forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const val = e.target.value;
+        inputParts.classList.add('hidden');
+        inputDuration.classList.add('hidden');
+        inputCustom.classList.add('hidden');
+
+        if (val === 'parts') {
+          inputParts.classList.remove('hidden');
+        } else if (val === 'duration') {
+          inputDuration.classList.remove('hidden');
+        } else if (val === 'custom') {
+          inputCustom.classList.remove('hidden');
+        }
+        updatePreview();
+      });
+    });
+
+    // Event listeners to update preview when options change
+    document.getElementById('input-parts-val').addEventListener('input', updatePreview);
+    document.getElementById('input-duration-val').addEventListener('input', updatePreview);
+    document.getElementById('input-custom-val').addEventListener('input', updatePreview);
+    document.getElementById('input-overlap-val').addEventListener('input', updatePreview);
+
+    // Time Formatter Helper (seconds -> hh:mm:ss)
+    function formatTime(seconds) {
+      if (seconds < 0) seconds = 0;
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      return [
+        h.toString().padStart(2, '0'),
+        m.toString().padStart(2, '0'),
+        s.toString().padStart(2, '0')
+      ].join(':');
+    }
+
+    // Parse hh:mm:ss or mm:ss to seconds
+    function parseTimeToSeconds(timeStr) {
+      const parts = timeStr.trim().split(':').map(Number);
+      if (parts.some(isNaN)) return null;
+      if (parts.length === 3) {
+        return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      } else if (parts.length === 2) {
+        return parts[0] * 60 + parts[1];
+      } else if (parts.length === 1) {
+        return parts[0];
+      }
+      return null;
+    }
+
+    // Core Preview Update logic
+    function updatePreview() {
+      const overlapSec = parseInt(document.getElementById('input-overlap-val').value) || 0;
+      const mode = document.querySelector('input[name="split-mode"]:checked').value;
+      calculatedParts = [];
+
+      if (mode === 'parts') {
+        const partsCount = parseInt(document.getElementById('input-parts-val').value) || 2;
+        const partLength = videoDuration / partsCount;
+        
+        for (let i = 0; i < partsCount; i++) {
+          const start = i * partLength;
+          let end = (i + 1) * partLength;
+          
+          if (i < partsCount - 1) {
+            end += overlapSec;
+          }
+          
+          if (end > videoDuration) end = videoDuration;
+
+          calculatedParts.push({
+            partNum: i + 1,
+            start: start,
+            end: end,
+            duration: end - start
+          });
+        }
+      } 
+      else if (mode === 'duration') {
+        const partMins = parseInt(document.getElementById('input-duration-val').value) || 10;
+        const partLength = partMins * 60;
+        const partsCount = Math.ceil(videoDuration / partLength);
+
+        for (let i = 0; i < partsCount; i++) {
+          const start = i * partLength;
+          let end = (i + 1) * partLength;
+
+          if (i < partsCount - 1) {
+            end += overlapSec;
+          }
+
+          if (end > videoDuration) end = videoDuration;
+
+          calculatedParts.push({
+            partNum: i + 1,
+            start: start,
+            end: end,
+            duration: end - start
+          });
+        }
+      } 
+      else if (mode === 'custom') {
+        const customVal = document.getElementById('input-custom-val').value;
+        const points = customVal.split(',')
+                                .map(p => parseTimeToSeconds(p))
+                                .filter(p => p !== null && p > 0 && p < videoDuration)
+                                .sort((a, b) => a - b);
+        
+        const timePoints = [0, ...points, videoDuration];
+        
+        for (let i = 0; i < timePoints.length - 1; i++) {
+          const start = timePoints[i];
+          let end = timePoints[i + 1];
+
+          if (i < timePoints.length - 2) {
+            end += overlapSec;
+          }
+
+          if (end > videoDuration) end = videoDuration;
+
+          calculatedParts.push({
+            partNum: i + 1,
+            start: start,
+            end: end,
+            duration: end - start
+          });
+        }
+      }
+
+      // Render Table Preview
+      const container = document.getElementById('preview-list-container');
+      container.innerHTML = '';
+
+      calculatedParts.forEach(p => {
+        const row = document.createElement('div');
+        row.className = "px-4 py-3 flex justify-between items-center text-xs hover:bg-zinc-900/20";
+        row.innerHTML = `
+          <span class="font-bold text-zinc-300">ភាគទី ${p.partNum} (Part ${p.partNum})</span>
+          <span class="text-brand-400 font-mono font-bold">${formatTime(p.start)} ➔ ${formatTime(p.end)}</span>
+          <span class="text-zinc-500 text-[11px]">ប្រវែង ${formatTime(p.duration)}</span>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    // Start split execution on backend
+    async function handleStartSplit() {
+      const outputFolder = document.getElementById('output-folder-input').value.trim();
+      const outputPrefix = document.getElementById('output-name-input').value.trim();
+      const overlapSec = parseInt(document.getElementById('input-overlap-val').value) || 0;
+      const mode = document.querySelector('input[name="split-mode"]:checked').value;
+
+      if (!loadedVideoPath) {
+        alert("សូមបញ្ចូលវីដេអូជាមុនសិន!");
+        return;
+      }
+
+      if (!outputFolder) {
+        alert("សូមជ្រើសរើសថតលទ្ធផល!");
+        return;
+      }
+
+      const payload = {
+        videoPath: loadedVideoPath,
+        mode: mode,
+        overlapSec: overlapSec,
+        outputFolder: outputFolder,
+        outputPrefix: outputPrefix,
+        parts: calculatedParts
+      };
+
+      switchState('processing');
+
+      const progressBar = document.getElementById('process-bar');
+      const percentText = document.getElementById('process-percent-text');
+      const partText = document.getElementById('process-part-text');
+      const etaText = document.getElementById('process-eta');
+
+      progressBar.style.width = '0%';
+      percentText.textContent = '0%';
+      partText.textContent = 'កំពុងចាប់ផ្ដើម...';
+      etaText.textContent = 'កំពុងភ្ជាប់ទៅ Server...';
+
+      try {
+        const res = await fetch('/api/split', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.detail || "មិនអាចចាប់ផ្ដើមបំបែកវីដេអូបានទេ");
+        }
+
+        // Open SSE connection
+        if (eventSource) eventSource.close();
+        
+        eventSource = new EventSource('/api/progress');
+        
+        eventSource.onmessage = function(event) {
+          const state = JSON.parse(event.data);
+          
+          progressBar.style.width = `${state.progress_percent}%`;
+          percentText.textContent = `${state.progress_percent}%`;
+          
+          if (state.status === 'processing') {
+            partText.textContent = `កំពុងបង្កើត៖ ភាគទី ${state.current_part} នៃ ${state.total_parts} ភាគ`;
+            
+            if (state.current_part > 0) {
+              const avgTimePerPart = state.elapsed_time / state.current_part;
+              const remainingParts = state.total_parts - state.current_part;
+              const etaSecs = Math.ceil(avgTimePerPart * remainingParts);
+              etaText.textContent = `រយៈពេលនៅសល់ (ETA)៖ ~${formatTime(etaSecs)}`;
+            } else {
+              etaText.textContent = 'រយៈពេលនៅសល់ (ETA)៖ កំពុងគណនា...';
+            }
+          }
+          
+          if (state.status === 'completed') {
+            eventSource.close();
+            showCompletedScreen(state.output_files, state.output_folder);
+          } else if (state.status === 'error') {
+            eventSource.close();
+            alert("កំហុសក្នុងការកាត់៖ " + state.error_message);
+            switchState('loaded');
+          } else if (state.status === 'canceled') {
+            eventSource.close();
+            switchState('loaded');
+          }
+        };
+
+        eventSource.onerror = function() {
+          console.log("SSE connection closed.");
+        };
+
+      } catch (e) {
+        alert("កំហុស៖ " + e.message);
+        switchState('loaded');
+      }
+    }
+
+    // Show Completed Screen dynamically
+    function showCompletedScreen(files, folder) {
+      completedFolder = folder;
+      document.getElementById('completed-parts-count').textContent = files.length;
+      document.getElementById('completed-folder-path').textContent = folder;
+      
+      const completedContainer = document.getElementById('completed-list-container');
+      completedContainer.innerHTML = '';
+
+      files.forEach(file => {
+        const fullFilePath = folder + "/" + file.filename;
+        const fileRow = document.createElement('div');
+        fileRow.className = "bg-zinc-900/40 border border-zinc-800/40 hover:border-zinc-800 rounded-xl p-3 flex justify-between items-center text-xs";
+        fileRow.innerHTML = `
+          <div class="flex items-center gap-3 min-w-0">
+            <i data-lucide="video" class="w-4.5 h-4.5 text-brand-400"></i>
+            <span class="font-semibold text-zinc-300 truncate">${file.filename}</span>
+          </div>
+          <div class="flex items-center gap-3 text-zinc-500 font-mono">
+            <span>${file.duration_formatted}</span>
+            <button class="text-brand-400 hover:text-brand-300 font-bold flex items-center gap-1 active:scale-95">
+              <i data-lucide="play" class="w-3.5 h-3.5 fill-brand-400"></i> លេង
+            </button>
+          </div>
+        `;
+        
+        // Add event listener to play button
+        fileRow.querySelector('button').onclick = () => handlePlayFile(file.filename, folder);
+        
+        completedContainer.appendChild(fileRow);
+      });
+
+      lucide.createIcons();
+      switchState('completed');
+    }
+
+    // Cancel Split
+    async function handleCancelSplit() {
+      try {
+        await fetch('/api/cancel', { method: 'POST' });
+      } catch (e) {
+        console.error(e);
+      }
+      if (eventSource) {
+        eventSource.close();
+      }
+      switchState('loaded');
+    }
+
+    // Open output folder
+    async function handleOpenFolder() {
+      try {
+        await fetch('/api/open-folder', { method: 'POST' });
+      } catch (e) {
+        alert("មិនអាចបើក Folder បានទេ៖ " + e.message);
+      }
+    }
+
+    // Browse output folder using native dialog
+    async function handleBrowseFolder() {
+      try {
+        const res = await fetch('/api/select-folder', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.path) {
+          document.getElementById('output-folder-input').value = data.path;
+        }
+      } catch (e) {
+        console.error("Error opening folder dialog:", e);
+      }
+    }
+
+    // Browse video file using native dialog
+    async function handleBrowseFile() {
+      try {
+        const res = await fetch('/api/select-file', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.path) {
+          document.getElementById('path-input').value = data.path;
+        }
+      } catch (e) {
+        console.error("Error opening file dialog:", e);
+      }
+    }
+
+    // Play file in modal video player
+    function handlePlayFile(filename, folder) {
+      const fullPath = folder + "/" + filename;
+      const modal = document.getElementById('video-modal');
+      const title = document.getElementById('modal-title');
+      const video = document.getElementById('modal-video-player');
+      
+      title.textContent = filename;
+      video.src = `/api/play-video?path=${encodeURIComponent(fullPath)}`;
+      modal.classList.remove('hidden');
+      video.play().catch(e => console.log("Auto-play blocked or failed:", e));
+    }
+
+    function closeVideoModal() {
+      const modal = document.getElementById('video-modal');
+      const video = document.getElementById('modal-video-player');
+      video.pause();
+      video.src = "";
+      modal.classList.add('hidden');
+    }
+  </script>
+</body>
+</html>

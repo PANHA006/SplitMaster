@@ -1,0 +1,30 @@
+# PyInstaller / Build
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+
+# Project Outputs / Temp Inputs
+output/
+output_test/
+output_test_consecutive/
+public/temp/
+test_input.mp4
+test_input1.mp4
+test_input2.mp4
+
+# OS / IDE
+.vscode/
+.idea/
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Agent Configs
+.agents/
