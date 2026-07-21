@@ -1,51 +1,75 @@
-# Splitify - Professional Video Splitter
+# Splitify - Professional Lossless Video Splitter
 
-Splitify is a lightweight, high-performance desktop application designed to split video files into multiple segments quickly and without quality loss. It uses FFmpeg's lossless stream copy under the hood and features a modern glassmorphism GUI.
+**Splitify (SplitMaster)** is a 100% standalone, high-performance Windows desktop application designed to split video files into multiple segments instantly and without any quality loss. 
 
-## Features
+It harnesses FFmpeg's lossless stream copy engine under the hood and features a modern, responsive glassmorphism GUI running in native Microsoft Edge App Mode.
 
-- **Lossless Splitting**: Splits videos in seconds using FFmpeg copy mode without re-encoding, preserving 100% original video and audio quality.
-- **Multiple Split Modes**:
+---
+
+## ✨ Key Features
+
+- 🚀 **100% Standalone & Portable**: No Python, no FFmpeg installation, and no configuration required for end users. FFmpeg and FFprobe engines are bundled directly inside a single `.exe` binary.
+- 💻 **Native Desktop Window**: Runs in dedicated Microsoft Edge App Mode (`msedge --app`) without browser tabs, address bars, or `.dll` dependency conflicts.
+- ⚡ **Lossless Stream Copying**: Splits videos in seconds using FFmpeg stream copy mode (`-c copy`) without re-encoding, preserving 100% original video and audio quality.
+- 🎛️ **3 Flexible Split Modes**:
   - **Equal Parts**: Divide video into N equal duration segments.
   - **By Duration**: Split video into parts of fixed duration (e.g., every 15 minutes).
   - **Custom Ranges**: Define custom split points (timestamps) manually.
-- **Overlap Time**: Configure overlap seconds (e.g., 5-10s) between parts so that no content is missed between video boundaries.
-- **Native Desktop Integration**: Opens native Windows File Open and Folder Browser dialogs to choose inputs and output folders.
-- **Local Browserless App**: Packaged into a standalone `.exe` that launches in a native desktop window frame (via Microsoft Edge WebView2).
+- ⏱️ **Boundary Overlap Time**: Configure overlap seconds (e.g. 5-10s) between consecutive parts so that no context is missed between video boundaries.
+- 📊 **Real-Time Progress Monitoring**: Live Server-Sent Events (SSE) progress bar showing real-time percentage, current part counter, elapsed time, and ETA calculation.
+- 🎬 **Built-in Media Player & Explorer Integration**: Preview split segments directly inside the application and open output folders natively in Windows Explorer.
 
-## Tech Stack
+---
 
-- **Backend**: FastAPI (Python), Uvicorn, FFmpeg
-- **Frontend**: HTML5, Tailwind CSS, Lucide Icons, Vanilla JavaScript
-- **Desktop Wrapper**: PyWebview
-- **Packaging**: PyInstaller
+## 🛠️ Tech Stack
 
-## Prerequisites
+- **Backend**: Python 3.14, FastAPI, Uvicorn, FFmpeg & FFprobe
+- **Frontend**: HTML5, Tailwind CSS, Lucide Icons, Google Fonts (Outfit & Kantumruy Pro)
+- **Desktop Shell**: Microsoft Edge Native App Mode
+- **Bundling Engine**: PyInstaller
 
-- **Python 3.10+**
-- **FFmpeg**: Must be installed and added to your system's `PATH` environment variable.
+---
 
-## Setup & Local Development
+## 📦 How to Use & Share
 
-1. **Clone the repository** (or navigate to project directory).
-2. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. **Run the application**:
-   ```bash
-   python main.py
-   ```
-   This will spin up the local FastAPI server in the background and launch a native desktop GUI frame.
+### For End Users
+1. Locate the single compiled binary at `dist/Splitify.exe`.
+2. Share `Splitify.exe` directly via Telegram, Google Drive, OneDrive, or USB Flash Drive.
+3. Double-click `Splitify.exe` on any Windows 10/11 computer to launch the app instantly—no installation required!
 
-## Packaging as Standalone Executable (.exe)
+### For Developers
 
-You can package this project into a single standalone `.exe` file that does not show a console window on startup and runs like a native desktop app:
+#### 1. Clone the Repository
+```bash
+git clone https://github.com/PANHA006/SplitMaster.git
+cd SplitMaster
+```
 
-1. **Run the build script**:
-   ```bash
-   python build.py
-   ```
-2. Once compilation finishes successfully, your standalone executable will be located in the `dist/` directory:
-   - **File**: `dist/Splitify.exe`
-3. Double-click `Splitify.exe` to run the app instantly on any compatible Windows machine.
+#### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+#### 3. Run Development Server
+```bash
+python main.py
+```
+This starts the local FastAPI server and launches the desktop app in Edge App Mode.
+
+#### 4. Run Integration Tests
+```bash
+python test_api.py
+```
+Executes an automated suite that generates synthetic video input, tests API endpoints (`/api/load-video`, `/api/split`), verifies real-time SSE progress streaming, and validates output files.
+
+#### 5. Build Standalone Executable
+```bash
+python build.py
+```
+Runs the automated PyInstaller build script to bundle `main.py`, static assets (`public/`), `ffmpeg.exe`, and `ffprobe.exe` into a single binary at `dist/Splitify.exe`.
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
