@@ -463,25 +463,30 @@ app.mount("/", StaticFiles(directory=public_dir, html=True), name="public")
 if __name__ == "__main__":
     import uvicorn
     import threading
-    import webview
+    import subprocess
+    import webbrowser
+    import time
     
-    # Run FastAPI server in a background daemon thread
-    def run_server():
-        # Bind to 127.0.0.1 for local communication only
-        uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+    # Function to open browser or Edge App window after server starts
+    def open_app():
+        time.sleep(1.2)
+        edge_paths = [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+        ]
+        edge_exe = None
+        for path in edge_paths:
+            if os.path.exists(path):
+                edge_exe = path
+                break
 
-    server_thread = threading.Thread(target=run_server, daemon=True)
-    server_thread.start()
-    
-    # Wait for the server to spin up
-    time.sleep(1.0)
-    
-    # Open native WebView window
-    webview.create_window(
-        title="Splitify - Professional Video Splitter",
-        url="http://127.0.0.1:8000",
-        width=1000,
-        height=720,
-        resizable=True
-    )
-    webview.start()
+        if edge_exe:
+            subprocess.Popen([edge_exe, "--app=http://127.0.0.1:8000"])
+        else:
+            webbrowser.open("http://127.0.0.1:8000")
+
+    # Launch browser/app in background thread
+    threading.Thread(target=open_app, daemon=True).start()
+
+    # Run uvicorn in the main thread so signals and asyncio event loops function properly
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, log_level="warning")

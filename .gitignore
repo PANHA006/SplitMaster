@@ -1,7 +1,9 @@
-# PyInstaller / Build
+# PyInstaller / Build / Binaries
 build/
 dist/
 *.spec
+ffmpeg.exe
+ffprobe.exe
 
 # Python
 __pycache__/
