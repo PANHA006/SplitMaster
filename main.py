@@ -1,6 +1,13 @@
 import os
 import sys
+import io
 import subprocess
+
+# Fix PyInstaller --noconsole mode where sys.stdout and sys.stderr are None
+if sys.stdout is None:
+    sys.stdout = io.StringIO()
+if sys.stderr is None:
+    sys.stderr = io.StringIO()
 import threading
 import time
 import json
@@ -47,9 +54,9 @@ class LoadVideoRequest(BaseModel):
     path: str
 
 class SplitPart(BaseModel):
-    partNumber: int
-    startTime: float
-    endTime: float
+    partNum: int
+    start: float
+    end: float
     duration: float
 
 class SplitRequest(BaseModel):
@@ -516,4 +523,5 @@ if __name__ == "__main__":
     threading.Thread(target=open_app, daemon=True).start()
 
     # Run uvicorn in the main thread so signals and asyncio event loops function properly
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, log_level="warning")
+    # Disable default log_config to prevent NoneType.isatty error in --noconsole mode
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_config=None)
