@@ -5,6 +5,7 @@ import threading
 import time
 import json
 import math
+import shutil
 from typing import Optional
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
@@ -29,13 +30,13 @@ split_state = {
     "progress_percent": 0,
     "current_part": 0,
     "total_parts": 0,
-    "status": "idle",  # idle, processing, completed, canceled, error
+    "current_filename": "",
+    "start_time": 0,
+    "elapsed_seconds": 0,
+    "eta_seconds": 0,
+    "cancel_requested": False,
     "error_message": "",
-    "active_process": None,
-    "output_files": [],
-    "output_folder": "",
-    "start_time": 0.0,
-    "elapsed_time": 0.0,
+    "process": None
 }
 
 # Thread lock for state updates
@@ -46,9 +47,9 @@ class LoadVideoRequest(BaseModel):
     path: str
 
 class SplitPart(BaseModel):
-    partNum: int
-    start: float
-    end: float
+    partNumber: int
+    startTime: float
+    endTime: float
     duration: float
 
 class SplitRequest(BaseModel):
@@ -81,6 +82,32 @@ def format_seconds(seconds: float) -> str:
     s = int(seconds % 60)
     ms = int((seconds - int(seconds)) * 1000)
     return f"{h:02d}:{m:02d}:{s:02d}"
+
+def get_ffmpeg_cmd() -> str:
+    if getattr(sys, 'frozen', False):
+        bundled = os.path.join(sys._MEIPASS, "ffmpeg.exe")
+        if os.path.exists(bundled):
+            return bundled
+    which_path = shutil.which("ffmpeg")
+    if which_path and os.path.exists(which_path):
+        return which_path
+    winget_path = r"C:\Users\DARO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe"
+    if os.path.exists(winget_path):
+        return winget_path
+    return "ffmpeg"
+
+def get_ffprobe_cmd() -> str:
+    if getattr(sys, 'frozen', False):
+        bundled = os.path.join(sys._MEIPASS, "ffprobe.exe")
+        if os.path.exists(bundled):
+            return bundled
+    which_path = shutil.which("ffprobe")
+    if which_path and os.path.exists(which_path):
+        return which_path
+    winget_path = r"C:\Users\DARO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffprobe.exe"
+    if os.path.exists(winget_path):
+        return winget_path
+    return "ffprobe"
 
 @app.get("/api/config")
 def get_config():
@@ -170,7 +197,7 @@ def load_video(req: LoadVideoRequest):
     try:
         # 1. Get Duration using ffprobe
         duration_cmd = [
-            "ffprobe", "-v", "error", 
+            get_ffprobe_cmd(), "-v", "error", 
             "-show_entries", "format=duration", 
             "-of", "default=noprint_wrappers=1:nokey=1", 
             video_path
@@ -180,7 +207,7 @@ def load_video(req: LoadVideoRequest):
 
         # 2. Get Resolution using ffprobe
         res_cmd = [
-            "ffprobe", "-v", "error", 
+            get_ffprobe_cmd(), "-v", "error", 
             "-select_streams", "v:0", 
             "-show_entries", "stream=width,height", 
             "-of", "csv=s=x:p=0", 
@@ -206,7 +233,7 @@ def load_video(req: LoadVideoRequest):
                 pass
 
         thumb_cmd = [
-            "ffmpeg", "-y", 
+            get_ffmpeg_cmd(), "-y", 
             "-ss", str(thumb_secs), 
             "-i", video_path, 
             "-vframes", "1", 
@@ -286,7 +313,7 @@ def execute_split(req: SplitRequest):
             # ffmpeg command
             # Using -ss and -to for exact boundaries, and -c copy for speed (lossless)
             cmd = [
-                "ffmpeg", "-y",
+                get_ffmpeg_cmd(), "-y",
                 "-ss", f"{start:.3f}",
                 "-to", f"{end:.3f}",
                 "-i", video_path,

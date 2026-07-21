@@ -4,6 +4,16 @@ import subprocess
 import time
 import json
 import urllib.request
+import shutil
+
+def get_ffmpeg_bin() -> str:
+    which_path = shutil.which("ffmpeg")
+    if which_path and os.path.exists(which_path):
+        return which_path
+    winget_path = r"C:\Users\DARO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe"
+    if os.path.exists(winget_path):
+        return winget_path
+    return "ffmpeg"
 
 def run_integration_test():
     print("=== STARTING SPLITIFY INTEGRATION TEST ===")
@@ -14,7 +24,7 @@ def run_integration_test():
     
     # Command to generate 10s video (640x360, H264)
     gen_cmd = [
-        "ffmpeg", "-y",
+        get_ffmpeg_bin(), "-y",
         "-f", "lavfi",
         "-i", "testsrc=duration=10:size=640x360:rate=30",
         "-c:v", "libx264",

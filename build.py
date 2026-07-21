@@ -24,19 +24,40 @@ def build_app():
         except Exception as e:
             print(f"[WARN] Failed to remove {spec_file}: {e}")
 
-    # 2. Construct PyInstaller command
+    # 2. Locate ffmpeg and ffprobe binaries to bundle
+    ffmpeg_exe = shutil.which("ffmpeg")
+    if not ffmpeg_exe or not os.path.exists(ffmpeg_exe):
+        winget_ffmpeg = r"C:\Users\DARO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe"
+        if os.path.exists(winget_ffmpeg):
+            ffmpeg_exe = winget_ffmpeg
+
+    ffprobe_exe = shutil.which("ffprobe")
+    if not ffprobe_exe or not os.path.exists(ffprobe_exe):
+        winget_ffprobe = r"C:\Users\DARO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffprobe.exe"
+        if os.path.exists(winget_ffprobe):
+            ffprobe_exe = winget_ffprobe
+
+    # 3. Construct PyInstaller command
     # --onefile: package into a single .exe
     # --noconsole: hide the black terminal console window on startup
     # --add-data "public;public": bundle the public static directory
-    # --name "Splitify": name the output binary
+    # --add-binary: bundle ffmpeg and ffprobe binaries into the single file
     pyinstaller_cmd = [
         "python", "-m", "PyInstaller",
         "--noconsole",
         "--onefile",
         "--add-data", "public;public",
-        "--name", "Splitify",
-        "main.py"
+        "--name", "Splitify"
     ]
+
+    if ffmpeg_exe and os.path.exists(ffmpeg_exe):
+        print(f"[OK] Bundling ffmpeg binary: {ffmpeg_exe}")
+        pyinstaller_cmd.extend(["--add-binary", f"{ffmpeg_exe};."])
+    if ffprobe_exe and os.path.exists(ffprobe_exe):
+        print(f"[OK] Bundling ffprobe binary: {ffprobe_exe}")
+        pyinstaller_cmd.extend(["--add-binary", f"{ffprobe_exe};."])
+
+    pyinstaller_cmd.append("main.py")
     
     print(f"\nRunning command: {' '.join(pyinstaller_cmd)}")
     
