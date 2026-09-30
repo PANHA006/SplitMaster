@@ -1,6 +1,6 @@
-# Splitify - Professional Lossless Video Splitter
+# Splitify - Professional Lossless Video Splitter & Merger
 
-**Splitify (SplitMaster)** is a 100% standalone, high-performance Windows desktop application designed to split video files into multiple segments instantly and without any quality loss. 
+**Splitify (SplitMaster)** is a 100% standalone, high-performance Windows desktop application designed to split and merge video files instantly and without quality loss. 
 
 It harnesses FFmpeg's lossless stream copy engine under the hood and features a modern, responsive glassmorphism GUI running in native Microsoft Edge App Mode.
 
@@ -10,14 +10,16 @@ It harnesses FFmpeg's lossless stream copy engine under the hood and features a 
 
 - 🚀 **100% Standalone & Portable**: No Python, no FFmpeg installation, and no configuration required for end users. FFmpeg and FFprobe engines are bundled directly inside a single `.exe` binary.
 - 💻 **Native Desktop Window**: Runs in dedicated Microsoft Edge App Mode (`msedge --app`) without browser tabs, address bars, or `.dll` dependency conflicts.
-- ⚡ **Lossless Stream Copying**: Splits videos in seconds using FFmpeg stream copy mode (`-c copy`) without re-encoding, preserving 100% original video and audio quality.
+- ⚡ **Lossless Stream Copying**: Splits and joins videos in seconds using FFmpeg stream copy mode (`-c copy`) without re-encoding, preserving 100% original video and audio quality.
+- 🔗 **Lossless & Smart Video Merger (Large Batch Capable)**: Merge dozens to hundreds of videos (e.g. 380+ episodes) seamlessly without Windows command-line limit errors (`[WinError 206]`). Supports instant Lossless stream copying, Concat Demuxer transcoding, and Batch Chunking fallback.
 - 🎛️ **3 Flexible Split Modes**:
   - **Equal Parts**: Divide video into N equal duration segments.
   - **By Duration**: Split video into parts of fixed duration (e.g., every 15 minutes).
   - **Custom Ranges**: Define custom split points (timestamps) manually.
+- 🧠 **Smart Silence Detection**: Snaps split boundaries to silent pauses to avoid cutting off spoken words.
 - ⏱️ **Boundary Overlap Time**: Configure overlap seconds (e.g. 5-10s) between consecutive parts so that no context is missed between video boundaries.
 - 📊 **Real-Time Progress Monitoring**: Live Server-Sent Events (SSE) progress bar showing real-time percentage, current part counter, elapsed time, and ETA calculation.
-- 🎬 **Built-in Media Player & Explorer Integration**: Preview split segments directly inside the application and open output folders natively in Windows Explorer.
+- 🎬 **Built-in Media Player & Explorer Integration**: Preview split or merged videos directly inside the application and open output folders natively in Windows Explorer.
 
 ---
 
@@ -50,11 +52,13 @@ cd SplitMaster
 pip install -r requirements.txt
 ```
 
-#### 3. Run Development Server
+#### 3. Run Application
+* **Option A**: Double-click `run.bat` to launch immediately!
+* **Option B (Command Line)**:
 ```bash
 python main.py
 ```
-This starts the local FastAPI server and launches the desktop app in Edge App Mode.
+This starts the local FastAPI server on port 8765 and launches the desktop app in Edge App Mode.
 
 #### 4. Run Integration Tests
 ```bash
