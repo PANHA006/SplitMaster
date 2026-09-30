@@ -1594,15 +1594,27 @@ def run_ffmpeg_merge_process(cmd: list[str], log_file_path: str, total_duration:
         except Exception:
             pass
         hint = explain_ffmpeg_error(err_text)
-        log_terminal("=" * 65)
-        log_terminal(f"[Merge:ERROR] ❌ FFmpeg ERROR occurred during merge (Exit code: {process.returncode})!")
-        log_terminal("Error details from FFmpeg:")
-        for l in err_text.splitlines():
-            log_terminal(f"  {l}")
-        if hint:
-            log_terminal(f"[Merge:ERROR] 💡 {hint}")
-        log_terminal("=" * 65)
-        if raise_on_error:
+        if not raise_on_error:
+            # Part of the lossless retry chain: this is NOT fatal, the next strategy is tried.
+            log_lines = [l.strip() for l in err_text.splitlines() if l.strip()]
+            keywords = ("Error", "error", "Invalid", "Non-monotonic", "failed", "Invalid data")
+            error_line = next(
+                (l for l in reversed(log_lines) if any(k in l for k in keywords)),
+                log_lines[-1] if log_lines else "",
+            )
+            # strip the noisy "[stream @ 0000...]" prefix
+            error_line = re.sub(r"\[[^\]]*@\s*[0-9a-fx]+\]\s*", "", error_line)
+            log_terminal(f"[Merge:Retry] ⚠️ Strategy failed (exit {process.returncode}): {error_line[:160]}")
+            log_terminal("[Merge:Retry]    ↪ Trying the next strategy automatically...")
+        else:
+            log_terminal("=" * 65)
+            log_terminal(f"[Merge:ERROR] ❌ FFmpeg ERROR occurred during merge (Exit code: {process.returncode})!")
+            log_terminal("Error details from FFmpeg:")
+            for l in err_text.splitlines():
+                log_terminal(f"  {l}")
+            if hint:
+                log_terminal(f"[Merge:ERROR] 💡 {hint}")
+            log_terminal("=" * 65)
             raise Exception(f"{hint or 'FFmpeg error'}\n--- FFmpeg output ---\n{err_text}")
 
     return process.returncode
@@ -1699,6 +1711,7 @@ def perform_lossless_merge(
         cmd = _lossless_concat_cmd(concat_list_path, out_path, flags)
         code = run_ffmpeg_merge_process(cmd, log_path, duration, is_lossless=True, raise_on_error=False)
         if code == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            log_terminal(f"[Merge:Retry] ✅ Lossless merge succeeded ({label.split('–')[-1].strip()}).")
             return True
         last_error = _read_log_tail(log_path) or "FFmpeg exited with a non-zero status"
         if _is_canceled():

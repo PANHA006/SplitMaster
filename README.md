@@ -89,6 +89,12 @@ python test_api.py
 Executes an automated suite that generates synthetic video input, tests API endpoints (`/api/load-video`, `/api/split`), verifies real-time SSE progress streaming, and validates output files.
 
 ```bash
+python scan_timestamps.py "D:\MyEpisodes"
+```
+Diagnostics helper: probes every episode's `start_time`, timebase and container-vs-stream duration drift and
+prints which files break a plain lossless concat (plus the one-line FFmpeg command to re-mux them).
+
+```bash
 python test_selective_autofix.py
 ```
 Runs the selective auto-fix verification (A/V drift, mixed FPS/resolution, missing audio track).
