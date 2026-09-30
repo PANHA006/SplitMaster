@@ -3,6 +3,8 @@ import sys
 import subprocess
 import shutil
 
+from ffmpeg_tools import find_binary
+
 def build_app():
     print("=== STARTING SPLITIFY COMPILATION PROCESS ===")
     
@@ -24,18 +26,17 @@ def build_app():
         except Exception as e:
             print(f"[WARN] Failed to remove {spec_file}: {e}")
 
-    # 2. Locate ffmpeg and ffprobe binaries to bundle
-    ffmpeg_exe = shutil.which("ffmpeg")
-    if not ffmpeg_exe or not os.path.exists(ffmpeg_exe):
-        winget_ffmpeg = r"C:\Users\DARO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe"
-        if os.path.exists(winget_ffmpeg):
-            ffmpeg_exe = winget_ffmpeg
+    # 2. Locate ffmpeg and ffprobe binaries to bundle (shared resolver, no hardcoded paths)
+    ffmpeg_exe = find_binary("ffmpeg")
+    ffprobe_exe = find_binary("ffprobe")
 
-    ffprobe_exe = shutil.which("ffprobe")
-    if not ffprobe_exe or not os.path.exists(ffprobe_exe):
-        winget_ffprobe = r"C:\Users\DARO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffprobe.exe"
-        if os.path.exists(winget_ffprobe):
-            ffprobe_exe = winget_ffprobe
+    if not ffmpeg_exe or not ffprobe_exe:
+        missing = [n for n, p in (("ffmpeg", ffmpeg_exe), ("ffprobe", ffprobe_exe)) if not p]
+        print(f"\n[FAIL] Could not locate: {', '.join(missing)}")
+        print("       Install FFmpeg (winget install Gyan.FFmpeg) or set FFMPEG_BIN / FFPROBE_BIN,")
+        print("       or place the .exe files in a 'bin/' folder next to build.py.")
+        print("       Refusing to build a standalone app without the required binaries.")
+        return False
 
     # 3. Construct PyInstaller command
     # --onefile: package into a single .exe

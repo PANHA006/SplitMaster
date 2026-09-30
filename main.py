@@ -3,6 +3,12 @@ import sys
 import io
 import subprocess
 import threading
+import time
+import json
+import math
+import shutil
+import re
+from typing import Optional
 
 # Fix PyInstaller --noconsole mode where sys.stdout and sys.stderr are None
 if sys.stdout is None:
@@ -28,12 +34,6 @@ def log_terminal(msg: str):
         print(f"[{now_str}] [Splitify] {msg}", flush=True)
     except Exception:
         pass
-import time
-import json
-import math
-import shutil
-import re
-from typing import Optional
 
 # Silence harmless Windows WinError 10054 when browser closes/refreshes connection abruptly
 if sys.platform == "win32":
@@ -53,19 +53,21 @@ if sys.platform == "win32":
         _ProactorBasePipeTransport._call_connection_lost = _silent_call_connection_lost
     except Exception:
         pass
+
 from fastapi import FastAPI, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import StreamingResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from ffmpeg_tools import find_binary
+
 app = FastAPI(title="Splitify Backend")
 
-# Enable CORS
+# Enable CORS: only same-machine origins (the UI runs on 127.0.0.1 with a dynamic port)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origin_regex=r"^http://(127\.0\.0\.1|localhost)(:\d+)?$",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -73,17 +75,24 @@ app.add_middleware(
 # Global State for video splitting task
 split_state = {
     "is_running": False,
+    "status": "idle",           # idle | processing | completed | canceled | error
+    "task_type": "split",       # split | merge
     "progress_percent": 0,
     "current_part": 0,
     "total_parts": 0,
-    "current_filename": "",
-    "start_time": 0,
-    "elapsed_seconds": 0,
-    "eta_seconds": 0,
-    "cancel_requested": False,
+    "output_files": [],
+    "output_folder": "",
     "error_message": "",
-    "process": None
+    "start_time": 0.0,
+    "elapsed_time": 0.0,
+    "eta_seconds": 0,
+    "speed": "1.0",
+    "fps": "",
+    "active_process": None
 }
+
+# Folders the user explicitly worked with this session (used to validate media/folder requests)
+allowed_media_dirs: set[str] = set()
 
 # Thread lock for state updates
 state_lock = threading.Lock()
@@ -147,10 +156,66 @@ else:
 
 public_dir = os.path.join(base_dir, "public")
 
-# Serve UI static files
-# Make sure public folder and output folder exist
-os.makedirs(os.path.join(public_dir, "temp"), exist_ok=True)
-os.makedirs("output", exist_ok=True)
+# Served static assets (index.html, favicon, lucide icons...) that ship with the app
+SERVED_STATIC_FILES = ("index.html", "favicon.svg", "lucide.min.js")
+
+# Video extensions accepted for upload / preview
+ALLOWED_VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".ts", ".m4v", ".flv", ".mpg", ".mpeg", ".wmv"}
+
+def get_app_dir() -> str:
+    """Writable root that persists next to the app (folder of the .exe when frozen)."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+def _ensure_dir(path: str) -> str:
+    """Create a folder next to the app; fall back to %LOCALAPPDATA%\\Splitify when not writable."""
+    try:
+        os.makedirs(path, exist_ok=True)
+        return path
+    except OSError:
+        fallback = os.path.join(
+            os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "Splitify", os.path.basename(path)
+        )
+        os.makedirs(fallback, exist_ok=True)
+        log_terminal(f"[WARN] '{path}' is not writable, using '{fallback}' instead.")
+        return fallback
+
+def get_data_dir() -> str:
+    """Persistent folder for split / merge outputs."""
+    return _ensure_dir(os.path.join(get_app_dir(), "output"))
+
+def get_temp_dir() -> str:
+    """Writable scratch folder for uploads, thumbnails and FFmpeg concat lists."""
+    return _ensure_dir(os.path.join(get_app_dir(), "temp"))
+
+def register_media_dir(path: str):
+    """Remember a folder the user legitimately interacted with (for media validation)."""
+    if not path:
+        return
+    try:
+        folder = os.path.abspath(path if os.path.isdir(path) else os.path.dirname(path))
+    except Exception:
+        return
+    if os.path.isdir(folder):
+        allowed_media_dirs.add(os.path.normcase(folder))
+
+def is_path_allowed(path: str) -> bool:
+    """True when the path sits inside a folder the user has already used this session."""
+    try:
+        target = os.path.normcase(os.path.abspath(path))
+    except Exception:
+        return False
+    for folder in allowed_media_dirs:
+        if target == folder or target.startswith(folder + os.sep):
+            return True
+    return False
+
+# Make sure the folders we write to exist on startup
+get_data_dir()
+get_temp_dir()
+register_media_dir(get_data_dir())
+register_media_dir(get_temp_dir())
 
 # Helper to format seconds to hh:mm:ss
 def format_seconds(seconds: float) -> str:
@@ -161,32 +226,12 @@ def format_seconds(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 def get_ffmpeg_cmd() -> str:
-    if getattr(sys, 'frozen', False):
-        bundled = os.path.join(sys._MEIPASS, "ffmpeg.exe")
-        if os.path.exists(bundled):
-            return bundled
-    which_path = shutil.which("ffmpeg")
-    if which_path and os.path.exists(which_path):
-        return which_path
-    # Check local bin/
-    local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "ffmpeg.exe")
-    if os.path.exists(local_path):
-        return local_path
-    return "ffmpeg"
+    """Resolve the ffmpeg binary (shared resolver: env -> bundle -> bin/ -> PATH -> WinGet)."""
+    return find_binary("ffmpeg") or "ffmpeg"
 
 def get_ffprobe_cmd() -> str:
-    if getattr(sys, 'frozen', False):
-        bundled = os.path.join(sys._MEIPASS, "ffprobe.exe")
-        if os.path.exists(bundled):
-            return bundled
-    which_path = shutil.which("ffprobe")
-    if which_path and os.path.exists(which_path):
-        return which_path
-    # Check local bin/
-    local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "ffprobe.exe")
-    if os.path.exists(local_path):
-        return local_path
-    return "ffprobe"
+    """Resolve the ffprobe binary (shared resolver: env -> bundle -> bin/ -> PATH -> WinGet)."""
+    return find_binary("ffprobe") or "ffprobe"
 
 def find_silence_cut_point(video_path: str, target_sec: float, search_window: float = 20.0, total_duration: float = 0.0) -> float:
     start_search = max(0.0, target_sec - search_window)
@@ -273,7 +318,7 @@ def get_smart_silence_points(req: SmartSilenceRequest):
 @app.get("/api/config")
 def get_config():
     return {
-        "default_output_folder": os.path.abspath("output")
+        "default_output_folder": get_data_dir()
     }
 
 def choose_file_dialog() -> str:
@@ -430,6 +475,7 @@ def select_file():
     try:
         path = choose_file_dialog()
         if path and os.path.exists(path):
+            register_media_dir(path)
             return {"success": True, "path": path}
         return {"success": True, "path": ""}
     except Exception as e:
@@ -439,6 +485,8 @@ def select_file():
 def select_multiple_files():
     try:
         paths = choose_multiple_files_dialog()
+        for p in paths:
+            register_media_dir(p)
         return {"success": True, "paths": paths}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cannot open multi-file dialog: {str(e)}")
@@ -448,6 +496,7 @@ def select_folder():
     try:
         path = choose_folder_dialog()
         if path and os.path.exists(path):
+            register_media_dir(path)
             return {"success": True, "path": path}
         return {"success": True, "path": ""}
     except Exception as e:
@@ -456,24 +505,32 @@ def select_folder():
 @app.post("/api/upload")
 def upload_file(file: UploadFile = File(...)):
     try:
-        temp_dir = os.path.join("public", "temp")
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Clean up old uploaded files in public/temp to save disk space
+        safe_name = os.path.basename(file.filename or "").strip()
+        ext = os.path.splitext(safe_name)[1].lower()
+        if not safe_name or ext not in ALLOWED_VIDEO_EXTS:
+            raise HTTPException(status_code=400, detail="ប្រភេទឯកសារនេះមិនត្រូវបានអនុញ្ញាតឡើយ។")
+
+        temp_dir = get_temp_dir()
+
+        # Clean up old uploaded files in temp dir to save disk space
         for f in os.listdir(temp_dir):
-            if f.endswith(os.path.splitext(file.filename)[1]) or f == "thumbnail.jpg":
+            if os.path.splitext(f)[1].lower() in ALLOWED_VIDEO_EXTS or f == "thumbnail.jpg":
                 try:
                     os.remove(os.path.join(temp_dir, f))
                 except Exception:
                     pass
 
-        temp_path = os.path.join(temp_dir, file.filename)
+        temp_path = os.path.join(temp_dir, safe_name)
         with open(temp_path, "wb") as buffer:
             # Read in chunks of 1MB to handle large files efficiently
             while chunk := file.file.read(1024 * 1024):
                 buffer.write(chunk)
-                
+
+        register_media_dir(temp_path)
+        log_terminal(f"Uploaded Video: {safe_name}")
         return {"success": True, "path": os.path.abspath(temp_path)}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"កំហុសក្នុងការ Upload វីដេអូ៖ {str(e)}")
 
@@ -519,9 +576,8 @@ def load_video(req: LoadVideoRequest):
 
         # 4. Generate Thumbnail (at 5s mark or 0s if short)
         thumb_secs = 5.0 if duration >= 5.0 else 0.0
-        thumb_relative_path = "temp/thumbnail.jpg"
-        thumb_dest = os.path.join("public", thumb_relative_path)
-        
+        thumb_dest = os.path.join(get_temp_dir(), "thumbnail.jpg")
+
         # Delete old thumbnail if exists
         if os.path.exists(thumb_dest):
             try:
@@ -541,6 +597,7 @@ def load_video(req: LoadVideoRequest):
         subprocess.run(thumb_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         filename = os.path.basename(video_path)
+        register_media_dir(video_path)
         log_terminal(f"Loaded Video: {filename} ({resolution}, {format_seconds(duration)}, {size_text})")
 
         return {
@@ -887,6 +944,8 @@ def preview_merge_partitions(req: PartitionPreviewRequest):
 def check_merge_compatibility(req: MergeCheckRequest):
     if not req.videoPaths:
         raise HTTPException(status_code=400, detail="សូមជ្រើសរើសវីដេអូយ៉ាងហោចណាស់ ២ ដើម្បីភ្ជាប់។")
+    for p in req.videoPaths:
+        register_media_dir(p)
     
     video_infos = []
     total_duration = 0.0
@@ -976,6 +1035,7 @@ def execute_split(req: SplitRequest):
         
     output_folder = req.outputFolder.strip()
     os.makedirs(output_folder, exist_ok=True)
+    register_media_dir(output_folder)
     
     ext = os.path.splitext(video_path)[1]
     if not ext:
@@ -989,11 +1049,16 @@ def execute_split(req: SplitRequest):
     log_terminal(f"Output Directory: {output_folder}")
 
     with state_lock:
+        # A cancel may arrive before this background task actually starts
+        if split_state.get("status") == "canceled":
+            log_terminal("[Split] Task was canceled before it started - aborting.")
+            return
         split_state["is_running"] = True
         split_state["progress_percent"] = 0
         split_state["current_part"] = 0
         split_state["total_parts"] = total_parts
         split_state["status"] = "processing"
+        split_state["task_type"] = "split"
         split_state["error_message"] = ""
         split_state["output_files"] = []
         split_state["output_folder"] = output_folder
@@ -1144,6 +1209,7 @@ def execute_merge(req: MergeRequest):
 
     output_folder = req.outputFolder.strip()
     os.makedirs(output_folder, exist_ok=True)
+    register_media_dir(output_folder)
 
     output_filename = req.outputFilename.strip()
     if not output_filename:
@@ -1167,6 +1233,10 @@ def execute_merge(req: MergeRequest):
     log_terminal(f"Total Duration: {format_seconds(total_duration)} | Output: {output_filename}")
 
     with state_lock:
+        # A cancel may arrive before this background task actually starts
+        if split_state.get("status") == "canceled":
+            log_terminal("[Merge] Task was canceled before it started - aborting.")
+            return
         split_state["is_running"] = True
         split_state["progress_percent"] = 5
         split_state["current_part"] = 1
@@ -1191,8 +1261,7 @@ def execute_merge(req: MergeRequest):
         return
 
     mode = req.mode or "auto"
-    temp_dir = os.path.join("public", "temp")
-    os.makedirs(temp_dir, exist_ok=True)
+    temp_dir = get_temp_dir()
     concat_list_path = os.path.join(temp_dir, f"concat_list_{int(time.time()*1000)}.txt")
 
     try:
@@ -1422,8 +1491,7 @@ def execute_selective_autofix_merge(
 ):
     """Normalize ONLY the mismatched episodes to master specs, then perform lossless stream copy on all episodes."""
     global split_state
-    temp_dir = os.path.join("public", "temp")
-    os.makedirs(temp_dir, exist_ok=True)
+    temp_dir = get_temp_dir()
     num_to_fix = len(mismatched_indices)
     
     log_terminal("=" * 75)
@@ -1637,8 +1705,7 @@ def execute_multi_part_merge(
         split_state["output_files"] = []
 
     generated_files = []
-    temp_dir = os.path.join("public", "temp")
-    os.makedirs(temp_dir, exist_ok=True)
+    temp_dir = get_temp_dir()
 
     for p_idx, part in enumerate(partitions):
         with state_lock:
@@ -1744,8 +1811,7 @@ def execute_multi_part_merge(
 def execute_batch_chunking_merge(video_paths: list[str], output_folder: str, final_output_path: str, target_w: int, target_h: int, total_duration: float):
     """Fallback method: chunk videos into groups of 20, normalize each group, then concat chunks lossless."""
     global split_state
-    temp_dir = os.path.join("public", "temp")
-    os.makedirs(temp_dir, exist_ok=True)
+    temp_dir = get_temp_dir()
     CHUNK_SIZE = 20
     chunks = [video_paths[i:i + CHUNK_SIZE] for i in range(0, len(video_paths), CHUNK_SIZE)]
     total_chunks = len(chunks)
@@ -2006,13 +2072,17 @@ def open_folder(req: Optional[OpenFolderRequest] = None):
         folder = req.folder.strip()
     if not folder:
         folder = split_state.get("output_folder", "")
-    if not folder or not os.path.exists(folder):
-        # Fallback to local output folder
-        folder = os.path.abspath("output")
-        
-    os.makedirs(folder, exist_ok=True)
+    if not folder or not os.path.isdir(folder):
+        # Fallback to the app's own output folder
+        folder = get_data_dir()
+
+    folder = os.path.abspath(folder)
+    # Only real directories may be opened (never a file/executable path)
+    if not os.path.isdir(folder):
+        raise HTTPException(status_code=400, detail="ផ្លូវនេះមិនមែនជា Folder ឡើយ។")
+
     log_terminal(f"Opened output folder in Explorer: {folder}")
-    
+
     try:
         if sys.platform == "win32":
             os.startfile(folder)
@@ -2026,9 +2096,25 @@ def open_folder(req: Optional[OpenFolderRequest] = None):
 
 @app.get("/api/play-video")
 def play_video(path: str):
-    if not os.path.exists(path):
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in ALLOWED_VIDEO_EXTS:
+        raise HTTPException(status_code=403, detail="អនុញ្ញាតតែឯកសារវីដេអូប៉ុណ្ណោះ។")
+    if not is_path_allowed(path):
+        raise HTTPException(status_code=403, detail="មិនអនុញ្ញាតចូលលើផ្លូវនេះឡើយ។")
+    if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="មិនរកឃើញឯកសារវីដេអូឡើយ។")
     return FileResponse(path)
+
+@app.get("/temp/{filename}")
+def get_temp_file(filename: str):
+    """Serve generated temp assets (uploaded videos, thumbnails) from the writable temp dir."""
+    safe_name = os.path.basename(filename)
+    target = os.path.join(get_temp_dir(), safe_name)
+    if not os.path.isfile(target):
+        raise HTTPException(status_code=404, detail="មិនរកឃើញឯកសារឡើយ។")
+    res = FileResponse(target)
+    res.headers["Cache-Control"] = "no-store"
+    return res
 
 # Serve index.html with no-cache headers to ensure immediate UI updates
 @app.get("/")
@@ -2040,15 +2126,19 @@ def get_index():
     res.headers["Expires"] = "0"
     return res
 
-# Mount static files at the root
-app.mount("/", StaticFiles(directory=public_dir, html=True), name="public")
+@app.get("/{filename}")
+def get_static_asset(filename: str):
+    """Serve the bundled static assets (favicon, lucide icons). Never shadows /api/* or /temp/*."""
+    if filename not in SERVED_STATIC_FILES:
+        raise HTTPException(status_code=404, detail="មិនរកឃើញឯកសារឡើយ។")
+    target = os.path.join(public_dir, filename)
+    if not os.path.isfile(target):
+        raise HTTPException(status_code=404, detail="មិនរកឃើញឯកសារឡើយ។")
+    return FileResponse(target)
 
 if __name__ == "__main__":
     import uvicorn
-    import threading
-    import subprocess
     import webbrowser
-    import time
     import socket
     
     def find_free_port(preferred_port: int = 8765) -> int:

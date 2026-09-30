@@ -14,12 +14,14 @@ __pycache__/
 
 # Project Outputs / Temp Inputs
 output/
+temp/
 output_test/
 output_test_consecutive/
 public/temp/
 test_input.mp4
 test_input1.mp4
 test_input2.mp4
+sim_*.mp4
 
 # OS / IDE
 .vscode/
@@ -27,6 +29,11 @@ test_input2.mp4
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# Scratch / verification artifacts
+_*.txt
+_*.log
+_final_exe_check.py
 
 # Agent Configs
 .agents/

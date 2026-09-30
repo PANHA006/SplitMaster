@@ -12,33 +12,7 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-def get_ffmpeg_bin() -> str:
-    which_path = shutil.which("ffmpeg")
-    if which_path and os.path.exists(which_path):
-        return which_path
-    winget_path = r"C:\Users\DARO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe"
-    if os.path.exists(winget_path):
-        return winget_path
-    return "ffmpeg"
-
-def get_ffprobe_bin() -> str:
-    which_path = shutil.which("ffprobe")
-    if which_path and os.path.exists(which_path):
-        return which_path
-    winget_path = r"C:\Users\DARO\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.1.2-full_build\bin\ffprobe.exe"
-    if os.path.exists(winget_path):
-        return winget_path
-    return "ffprobe"
-
-def start_local_test_server(port: int):
-    import uvicorn
-    from main import app
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    t = threading.Thread(target=server.run, daemon=True)
-    t.start()
-    time.sleep(1.2)
-    return server
+from test_helpers import get_ffmpeg_bin, get_ffprobe_bin, start_test_server
 
 def run_integration_test():
     print("=== STARTING SPLITIFY INTEGRATION TEST (SPLIT & MERGE) ===")
@@ -48,7 +22,7 @@ def run_integration_test():
 
     # Start server in background thread for testing
     print(f"Starting test server on port {API_PORT}...")
-    start_local_test_server(API_PORT)
+    start_test_server(API_PORT)
 
     # 1. Create two synthetic test videos
     test_video_1 = os.path.abspath("test_input_1.mp4")

@@ -25,10 +25,28 @@ It harnesses FFmpeg's lossless stream copy engine under the hood and features a 
 
 ## 🛠️ Tech Stack
 
-- **Backend**: Python 3.14, FastAPI, Uvicorn, FFmpeg & FFprobe
-- **Frontend**: HTML5, Tailwind CSS, Lucide Icons, Google Fonts (Outfit & Kantumruy Pro)
-- **Desktop Shell**: Microsoft Edge Native App Mode
+- **Backend**: Python 3.12+, FastAPI, Uvicorn, FFmpeg & FFprobe
+- **Frontend**: HTML5, Tailwind CSS, Lucide Icons (bundled locally), Google Fonts (Outfit & Kantumruy Pro)
+- **Desktop Shell**: Native App Mode window via Google Chrome or Microsoft Edge (`--app`)
 - **Bundling Engine**: PyInstaller
+
+---
+
+## 📂 Project Layout
+
+```
+SplitMaster/
+├── main.py                  # FastAPI app + FFmpeg split/merge engine
+├── ffmpeg_tools.py          # Shared ffmpeg/ffprobe binary resolver (no hardcoded paths)
+├── build.py                 # PyInstaller one-file build script
+├── test_api.py              # Split & merge integration tests
+├── test_selective_autofix.py# Selective auto-fix / drift verification tests
+├── test_helpers.py          # Shared helpers for the test scripts
+├── run.bat                  # Dev launcher (python main.py)
+├── public/                  # UI (index.html, favicon.svg, lucide.min.js)
+├── output/                  # Default split/merge output (created at runtime)
+└── temp/                    # Uploads, thumbnails, FFmpeg concat lists (created at runtime)
+```
 
 ---
 
@@ -38,6 +56,9 @@ It harnesses FFmpeg's lossless stream copy engine under the hood and features a 
 1. Locate the single compiled binary at `dist/Splitify.exe`.
 2. Share `Splitify.exe` directly via Telegram, Google Drive, OneDrive, or USB Flash Drive.
 3. Double-click `Splitify.exe` on any Windows 10/11 computer to launch the app instantly—no installation required!
+4. Split/merge results are saved to an `output/` folder created **next to the .exe** (change it any time from the UI).
+
+> ℹ️ The app opens a native App-Mode window using Chrome when available, otherwise Microsoft Edge, otherwise your default browser.
 
 ### For Developers
 
@@ -66,14 +87,23 @@ python test_api.py
 ```
 Executes an automated suite that generates synthetic video input, tests API endpoints (`/api/load-video`, `/api/split`), verifies real-time SSE progress streaming, and validates output files.
 
+```bash
+python test_selective_autofix.py
+```
+Runs the selective auto-fix verification (A/V drift, mixed FPS/resolution, missing audio track).
+
+> Both suites locate FFmpeg automatically (`FFMPEG_BIN` / `FFPROBE_BIN` env vars → `bin/` folder → system PATH → WinGet package cache).
+
 #### 5. Build Standalone Executable
 ```bash
 python build.py
 ```
 Runs the automated PyInstaller build script to bundle `main.py`, static assets (`public/`), `ffmpeg.exe`, and `ffprobe.exe` into a single binary at `dist/Splitify.exe`.
 
+The build **fails early** if FFmpeg/FFprobe cannot be found, so you never ship a binary that cannot cut video.
+
 ---
 
 ## 📄 License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+Distributed under the MIT License. See [`LICENSE`](LICENSE) for more information.
