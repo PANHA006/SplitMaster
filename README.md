@@ -12,6 +12,7 @@ It harnesses FFmpeg's lossless stream copy engine under the hood and features a 
 - 💻 **Native Desktop Window**: Runs in dedicated Microsoft Edge App Mode (`msedge --app`) without browser tabs, address bars, or `.dll` dependency conflicts.
 - ⚡ **Lossless Stream Copying**: Splits and joins videos in seconds using FFmpeg stream copy mode (`-c copy`) without re-encoding, preserving 100% original video and audio quality.
 - 🔗 **Lossless & Smart Video Merger (Large Batch Capable)**: Merge dozens to hundreds of videos (e.g. 380+ episodes) seamlessly without Windows command-line limit errors (`[WinError 206]`). Supports instant Lossless stream copying, Concat Demuxer transcoding, and Batch Chunking fallback.
+- 🛡️ **Self-healing Lossless Merge**: if FFmpeg reports `Non-monotonic DTS` (episodes encoded by different tools with a different `start_time`/timebase), Splitify automatically retries with timestamp-repair flags, then with a lossless MPEG-TS remux, and finally falls back to Selective Auto-Fix — so one odd episode can no longer kill a 95-episode batch.
 - 🎛️ **3 Flexible Split Modes**:
   - **Equal Parts**: Divide video into N equal duration segments.
   - **By Duration**: Split video into parts of fixed duration (e.g., every 15 minutes).
@@ -92,7 +93,14 @@ python test_selective_autofix.py
 ```
 Runs the selective auto-fix verification (A/V drift, mixed FPS/resolution, missing audio track).
 
-> Both suites locate FFmpeg automatically (`FFMPEG_BIN` / `FFPROBE_BIN` env vars → `bin/` folder → system PATH → WinGet package cache).
+```bash
+python test_merge_timestamp_recovery.py
+```
+Reproduces the "Non-monotonic DTS" merge failure (episodes with a different `start_time` / timebase) and
+verifies that the app now detects it, recovers automatically, never sticks on *processing*, and never
+leaves a half-written output file behind.
+
+> All three suites locate FFmpeg automatically (`FFMPEG_BIN` / `FFPROBE_BIN` env vars → `bin/` folder → system PATH → WinGet package cache).
 
 #### 5. Build Standalone Executable
 ```bash

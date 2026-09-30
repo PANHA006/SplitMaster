@@ -162,6 +162,37 @@ SERVED_STATIC_FILES = ("index.html", "favicon.svg", "lucide.min.js")
 # Video extensions accepted for upload / preview
 ALLOWED_VIDEO_EXTS = {".mp4", ".mkv", ".avi", ".mov", ".webm", ".ts", ".m4v", ".flv", ".mpg", ".mpeg", ".wmv"}
 
+# --- Lossless merge strategies (used by the retry chain) ------------------------------
+# Attempt 1: plain stream copy, fastest, works when every episode shares the same timeline
+LOSSLESS_BASE_FLAGS = ("-fflags", "+genpts", "-avoid_negative_ts", "make_zero")
+# Attempt 2: stream copy + timestamp repair (fixes most "Non-monotonic DTS" failures)
+LOSSLESS_REPAIR_FLAGS = (
+    "-fflags", "+genpts+igndts",
+    "-avoid_negative_ts", "make_zero",
+    "-max_interleave_delta", "0",
+    "-muxdelay", "0",
+)
+# Attempt 3: losslessly remux every episode to MPEG-TS first, then concat (always gives a
+# clean continuous timeline, e.g. when episodes were produced by different tools/timebases)
+TS_VIDEO_BSF = {"h264": "h264_mp4toannexb", "hevc": "hevc_mp4toannexb", "h265": "hevc_mp4toannexb"}
+
+def explain_ffmpeg_error(raw: str) -> str:
+    """Return a friendly Khmer explanation for well-known FFmpeg failures."""
+    text = (raw or "").lower()
+    if "non-monotonic dts" in text or "invalid data found when processing input" in text:
+        return ("វីដេអូខ្លះមាន timestamp មិនស៊ីគ្នា (Non-monotonic DTS) ដូច្នេះមិនអាចភ្ជាប់បែប Lossless "
+                "បានផ្ទាល់ឡើយ។ សូមសាកម្ដងទៀតដោយជ្រើស Mode “Auto / Selective Auto-Fix” ឬ “Full Re-encode”។")
+    if "no space left" in text:
+        return "Disk ពេញ មិនអាចសរសេរឯកសារលទ្ធផលបានឡើយ។ សូមបញ្ចេញទំហំរួចសាកម្ដងទៀត។"
+    if "permission denied" in text or "access is denied" in text:
+        return "គ្មានសិទ្ធិសរសេរក្នុង Folder លទ្ធផលឡើយ។ សូមជ្រើស Folder ផ្សេង (ឧ. Desktop)។"
+    if "no such file or directory" in text or "cannot find" in text:
+        return "រកមិនឃើញឯកសារ Input ឡើយ។ សូមត្រួតពិនិត្យផ្លូវឯកសារម្ដងទៀត។"
+    if "invalid argument" in text:
+        return "FFmpeg បដិសេធប៉ារ៉ាម៉ែត្រខ្លះ។ សូមសាកម្ដងទៀតដោយ Mode Re-encode។"
+    return ""
+
+
 def get_app_dir() -> str:
     """Writable root that persists next to the app (folder of the .exe when frozen)."""
     if getattr(sys, "frozen", False):
@@ -637,20 +668,31 @@ def probe_single_video(video_path: str) -> dict:
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"មិនរកឃើញឯកសារ៖ {video_path}")
     
-    # 1. Duration
-    duration_cmd = [
-        get_ffprobe_cmd(), "-v", "error", 
-        "-show_entries", "format=duration", 
-        "-of", "default=noprint_wrappers=1:nokey=1", 
+    # 1. Duration + start_time (start_time matters for lossless concat)
+    format_cmd = [
+        get_ffprobe_cmd(), "-v", "error",
+        "-show_entries", "format=duration,start_time",
+        "-of", "json",
         video_path
     ]
-    duration_out = subprocess.check_output(duration_cmd, encoding="utf-8", errors="replace").strip()
-    duration = float(duration_out) if duration_out else 0.0
+    try:
+        format_data = json.loads(subprocess.check_output(format_cmd, encoding="utf-8", errors="replace").strip() or "{}").get("format", {})
+    except Exception:
+        format_data = {}
+    duration_str = format_data.get("duration", "")
+    try:
+        duration = float(duration_str) if duration_str else 0.0
+    except Exception:
+        duration = 0.0
+    try:
+        start_time = float(format_data.get("start_time") or 0.0)
+    except Exception:
+        start_time = 0.0
 
     # 2. Streams info (video & audio)
     streams_cmd = [
         get_ffprobe_cmd(), "-v", "error", 
-        "-show_entries", "stream=index,codec_type,codec_name,width,height,pix_fmt,r_frame_rate,sample_rate,has_b_frames", 
+        "-show_entries", "stream=index,codec_type,codec_name,width,height,pix_fmt,r_frame_rate,sample_rate,has_b_frames,time_base,nb_frames", 
         "-of", "json", 
         video_path
     ]
@@ -677,6 +719,15 @@ def probe_single_video(video_path: str) -> dict:
 
     resolution = f"{width}x{height}" if width and height else "Unknown"
 
+    v_time_base = (v_stream or {}).get("time_base", "") or ""
+    a_time_base = (a_stream or {}).get("time_base", "") or ""
+    nb_video_frames = 0
+    try:
+        raw_nb = (v_stream or {}).get("nb_frames")
+        nb_video_frames = int(raw_nb) if raw_nb not in (None, "", "N/A") else 0
+    except Exception:
+        nb_video_frames = 0
+
     size_bytes = os.path.getsize(video_path)
     size_gb = size_bytes / (1024 * 1024 * 1024)
     size_text = f"{size_gb:.2f} GB" if size_gb >= 1.0 else f"{size_bytes / (1024 * 1024):.2f} MB"
@@ -697,6 +748,10 @@ def probe_single_video(video_path: str) -> dict:
         "has_b_frames": has_b_frames,
         "fps": fps_disp,
         "fps_num": fps_num,
+        "start_time": start_time,
+        "v_time_base": v_time_base,
+        "a_time_base": a_time_base,
+        "nb_video_frames": nb_video_frames,
         "has_warning": False,
         "warning_detail": "",
         "size_text": size_text
@@ -760,6 +815,25 @@ def analyze_merge_videos(video_infos: list[dict]):
     b_counts = [v.get("has_b_frames", 2) for v in video_infos]
     master_has_b_frames = max(set(b_counts), key=b_counts.count) if b_counts else 2
 
+    # 7. Timeline compatibility (critical for lossless stream-copy concat):
+    #    episodes produced by different tools often have a different start_time or timebase,
+    #    which makes FFmpeg fail with "Non-monotonic DTS" when copying streams.
+    st_counts = {}
+    for v in video_infos:
+        try:
+            st_key = round(float(v.get("start_time") or 0.0), 1)
+        except Exception:
+            st_key = 0.0
+        st_counts[st_key] = st_counts.get(st_key, 0) + 1
+    master_start_time = max(st_counts.items(), key=lambda x: x[1])[0] if st_counts else 0.0
+
+    vtb_counts = {}
+    for v in video_infos:
+        tb = v.get("v_time_base") or ""
+        if tb:
+            vtb_counts[tb] = vtb_counts.get(tb, 0) + 1
+    master_v_time_base = max(vtb_counts.items(), key=lambda x: x[1])[0] if vtb_counts else ""
+
     mismatched_indices = []
     reasons_by_idx = {}
 
@@ -785,6 +859,17 @@ def analyze_merge_videos(video_infos: list[dict]):
         if pfmt and pfmt != master_pix_fmt:
             warns.append(f"Pixel format {pfmt} (vs Master {master_pix_fmt})")
 
+        try:
+            st = float(v.get("start_time") or 0.0)
+        except Exception:
+            st = 0.0
+        if abs(st - master_start_time) > 0.5:
+            warns.append(f"ចំណុចចាប់ផ្ដើម {st:.2f}s (vs Master {master_start_time:.2f}s)")
+
+        vtb = v.get("v_time_base") or ""
+        if vtb and master_v_time_base and vtb != master_v_time_base:
+            warns.append(f"Timebase {vtb} (vs Master {master_v_time_base})")
+
         if warns:
             mismatched_indices.append(idx)
             reasons_by_idx[idx] = ", ".join(warns)
@@ -799,6 +884,8 @@ def analyze_merge_videos(video_infos: list[dict]):
         "master_acodec": master_acodec,
         "master_pix_fmt": master_pix_fmt,
         "master_has_b_frames": master_has_b_frames,
+        "master_start_time": master_start_time,
+        "master_v_time_base": master_v_time_base,
         "reasons_by_idx": reasons_by_idx
     }
     return baseline, mismatched_indices, reasons_by_idx
@@ -1164,11 +1251,12 @@ def execute_split(req: SplitRequest):
         log_terminal(f"[Split] === SPLIT COMPLETED: Generated {len(output_files)} files in {total_elapsed}s ===")
 
     except Exception as e:
-        log_terminal(f"[Split] ERROR: {str(e)}")
+        hint = explain_ffmpeg_error(str(e))
+        log_terminal(f"[Split] ERROR: {hint or str(e)}")
         with state_lock:
             split_state["status"] = "error"
             split_state["is_running"] = False
-            split_state["error_message"] = str(e)
+            split_state["error_message"] = hint or str(e)
             split_state["active_process"] = None
             
 @app.post("/api/split")
@@ -1207,168 +1295,200 @@ def execute_merge(req: MergeRequest):
             split_state["error_message"] = "ត្រូវការវីដេអូយ៉ាងហោចណាស់ ២ ដើម្បីភ្ជាប់។"
         return
 
-    output_folder = req.outputFolder.strip()
-    os.makedirs(output_folder, exist_ok=True)
-    register_media_dir(output_folder)
-
-    output_filename = req.outputFilename.strip()
-    if not output_filename:
-        output_filename = "Merged_Video"
-    if not output_filename.endswith(".mp4") and not output_filename.endswith(".mkv"):
-        output_filename += ".mp4"
-
-    final_output_path = os.path.join(output_folder, output_filename)
-
-    video_infos = []
-    total_duration = 0.0
-    for p in video_paths:
-        try:
-            v_inf = probe_single_video(p)
-            video_infos.append(v_inf)
-            total_duration += v_inf["duration"]
-        except Exception:
-            pass
-
-    log_terminal(f"=== STARTING VIDEO MERGE ({len(video_paths)} videos) ===")
-    log_terminal(f"Total Duration: {format_seconds(total_duration)} | Output: {output_filename}")
-
-    with state_lock:
-        # A cancel may arrive before this background task actually starts
-        if split_state.get("status") == "canceled":
-            log_terminal("[Merge] Task was canceled before it started - aborting.")
-            return
-        split_state["is_running"] = True
-        split_state["progress_percent"] = 5
-        split_state["current_part"] = 1
-        split_state["total_parts"] = len(video_paths)
-        split_state["status"] = "processing"
-        split_state["task_type"] = "merge"
-        split_state["error_message"] = ""
-        split_state["output_files"] = []
-        split_state["output_folder"] = output_folder
-        split_state["start_time"] = time.time()
-        split_state["elapsed_time"] = 0.0
-
-    if req.enableMultiPart:
-        execute_multi_part_merge(
-            req=req,
-            video_paths=video_paths,
-            video_infos=video_infos,
-            total_duration=total_duration,
-            output_folder=output_folder,
-            base_output_filename=output_filename
-        )
-        return
-
-    mode = req.mode or "auto"
-    temp_dir = get_temp_dir()
-    concat_list_path = os.path.join(temp_dir, f"concat_list_{int(time.time()*1000)}.txt")
-
     try:
-        # Build concat list file (safe for 10,000+ files)
-        with open(concat_list_path, "w", encoding="utf-8") as f:
-            for p in video_paths:
-                norm_p = os.path.abspath(p).replace("\\", "/")
-                escaped_p = norm_p.replace("'", "'\\''")
-                f.write(f"file '{escaped_p}'\n")
+        output_folder = req.outputFolder.strip()
+        os.makedirs(output_folder, exist_ok=True)
+        register_media_dir(output_folder)
 
-        baseline, mismatched_indices, reasons_by_idx = analyze_merge_videos(video_infos)
-        log_file_path = os.path.join(output_folder, "ffmpeg_merge.log")
+        output_filename = req.outputFilename.strip()
+        if not output_filename:
+            output_filename = "Merged_Video"
+        if not output_filename.endswith(".mp4") and not output_filename.endswith(".mkv"):
+            output_filename += ".mp4"
 
-        if mode == "lossless":
-            log_terminal("[Merge] Mode: LOSSLESS STREAM COPY (Forced by user)")
-            cmd = [
-                get_ffmpeg_cmd(), "-y",
-                "-fflags", "+genpts",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", concat_list_path,
-                "-c", "copy",
-                "-avoid_negative_ts", "make_zero",
-                final_output_path
-            ]
-            run_ffmpeg_merge_process(cmd, log_file_path, total_duration, is_lossless=True)
-        elif mode == "reencode":
-            log_terminal("[Merge] Mode: FULL RE-ENCODE (Forced by user)")
-            target_w = baseline.get("master_w", 1280)
-            target_h = baseline.get("master_h", 720)
-            log_terminal(f"[Merge] Target Resolution: {target_w}x{target_h}")
-            execute_batch_chunking_merge(video_paths, output_folder, final_output_path, target_w, target_h, total_duration)
-        else:
-            # "auto" or "selective"
-            if len(mismatched_indices) == 0:
-                log_terminal("[Merge] Mode: 100% UNIFORM VIDEOS -> Instant Lossless Stream Copy (~15s)")
-                cmd = [
-                    get_ffmpeg_cmd(), "-y",
-                    "-fflags", "+genpts",
-                    "-f", "concat",
-                    "-safe", "0",
-                    "-i", concat_list_path,
-                    "-c", "copy",
-                    "-avoid_negative_ts", "make_zero",
-                    final_output_path
-                ]
-                run_ffmpeg_merge_process(cmd, log_file_path, total_duration, is_lossless=True)
-            elif len(mismatched_indices) <= int(len(video_paths) * 0.75):
-                log_terminal(f"[Merge] Mode: SELECTIVE AUTO-FIX ({len(mismatched_indices)}/{len(video_paths)} videos mismatched)")
-                execute_selective_autofix_merge(
+        final_output_path = os.path.join(output_folder, output_filename)
+
+        video_infos = []
+        total_duration = 0.0
+        for p in video_paths:
+            try:
+                v_inf = probe_single_video(p)
+                video_infos.append(v_inf)
+                total_duration += v_inf["duration"]
+            except Exception:
+                pass
+
+        log_terminal(f"=== STARTING VIDEO MERGE ({len(video_paths)} videos) ===")
+        log_terminal(f"Total Duration: {format_seconds(total_duration)} | Output: {output_filename}")
+
+        with state_lock:
+            # A cancel may arrive before this background task actually starts
+            if split_state.get("status") == "canceled":
+                log_terminal("[Merge] Task was canceled before it started - aborting.")
+                return
+            split_state["is_running"] = True
+            split_state["progress_percent"] = 5
+            split_state["current_part"] = 1
+            split_state["total_parts"] = len(video_paths)
+            split_state["status"] = "processing"
+            split_state["task_type"] = "merge"
+            split_state["error_message"] = ""
+            split_state["output_files"] = []
+            split_state["output_folder"] = output_folder
+            split_state["start_time"] = time.time()
+            split_state["elapsed_time"] = 0.0
+
+        if req.enableMultiPart:
+            try:
+                execute_multi_part_merge(
+                    req=req,
                     video_paths=video_paths,
                     video_infos=video_infos,
-                    mismatched_indices=mismatched_indices,
-                    master_w=baseline["master_w"],
-                    master_h=baseline["master_h"],
-                    master_fps_filter=baseline["master_fps_filter"],
-                    master_fps_num=baseline["master_fps_num"],
-                    master_sr=baseline["master_sr"],
-                    master_pix_fmt=baseline.get("master_pix_fmt", "yuv420p"),
-                    master_has_b_frames=baseline.get("master_has_b_frames", 2),
+                    total_duration=total_duration,
                     output_folder=output_folder,
-                    final_output_path=final_output_path,
-                    total_duration=total_duration
+                    base_output_filename=output_filename
                 )
-            else:
-                log_terminal(f"[Merge] Mode: MAJORITY MISMATCHED ({len(mismatched_indices)}/{len(video_paths)}) -> Full Re-encode")
+            except Exception as e:
+                hint = explain_ffmpeg_error(str(e))
+                log_terminal(f"[Merge] ERROR: {hint or str(e)}")
+                with state_lock:
+                    if split_state.get("status") != "canceled":
+                        split_state["status"] = "error"
+                    split_state["is_running"] = False
+                    split_state["error_message"] = hint or str(e)
+                    split_state["active_process"] = None
+            return
+
+        mode = req.mode or "auto"
+        temp_dir = get_temp_dir()
+        concat_list_path = os.path.join(temp_dir, f"concat_list_{int(time.time()*1000)}.txt")
+
+        try:
+            # Build concat list file (safe for 10,000+ files)
+            with open(concat_list_path, "w", encoding="utf-8") as f:
+                for p in video_paths:
+                    norm_p = os.path.abspath(p).replace("\\", "/")
+                    escaped_p = norm_p.replace("'", "'\\''")
+                    f.write(f"file '{escaped_p}'\n")
+
+            baseline, mismatched_indices, reasons_by_idx = analyze_merge_videos(video_infos)
+            log_file_path = os.path.join(output_folder, "ffmpeg_merge.log")
+
+            if mode == "lossless":
+                log_terminal("[Merge] Mode: LOSSLESS STREAM COPY (Forced by user)")
+                perform_lossless_merge(
+                    video_paths=video_paths,
+                    concat_list_path=concat_list_path,
+                    out_path=final_output_path,
+                    duration=total_duration,
+                    log_path=log_file_path,
+                    temp_dir=temp_dir,
+                    tag="forced_lossless",
+                    reason="Forced by user",
+                )
+            elif mode == "reencode":
+                log_terminal("[Merge] Mode: FULL RE-ENCODE (Forced by user)")
                 target_w = baseline.get("master_w", 1280)
                 target_h = baseline.get("master_h", 720)
                 log_terminal(f"[Merge] Target Resolution: {target_w}x{target_h}")
                 execute_batch_chunking_merge(video_paths, output_folder, final_output_path, target_w, target_h, total_duration)
+            else:
+                # "auto" or "selective"
+                if len(mismatched_indices) == 0:
+                    log_terminal("[Merge] Mode: 100% UNIFORM VIDEOS -> Lossless Stream Copy (auto-recovery enabled)")
+                    try:
+                        perform_lossless_merge(
+                            video_paths=video_paths,
+                            concat_list_path=concat_list_path,
+                            out_path=final_output_path,
+                            duration=total_duration,
+                            log_path=log_file_path,
+                            temp_dir=temp_dir,
+                            tag="auto_uniform",
+                            reason="all episodes look uniform",
+                        )
+                    except Exception as lossless_err:
+                        if split_state.get("status") == "canceled":
+                            raise
+                        log_terminal(f"[Merge] ⚠️ Lossless merge failed ({lossless_err})")
+                        log_terminal("[Merge] ↩ Falling back to Selective Auto-Fix for this batch...")
+                        mismatched_indices = list(range(len(video_paths)))
 
-        # Cleanup temp concat list and log file
-        for fpath in [log_file_path, concat_list_path]:
-            if os.path.exists(fpath):
-                try:
-                    os.remove(fpath)
-                except Exception:
-                    pass
+                if mismatched_indices and len(mismatched_indices) <= int(len(video_paths) * 0.75):
+                    log_terminal(f"[Merge] Mode: SELECTIVE AUTO-FIX ({len(mismatched_indices)}/{len(video_paths)} videos mismatched)")
+                    execute_selective_autofix_merge(
+                        video_paths=video_paths,
+                        video_infos=video_infos,
+                        mismatched_indices=mismatched_indices,
+                        master_w=baseline["master_w"],
+                        master_h=baseline["master_h"],
+                        master_fps_filter=baseline["master_fps_filter"],
+                        master_fps_num=baseline["master_fps_num"],
+                        master_sr=baseline["master_sr"],
+                        master_pix_fmt=baseline.get("master_pix_fmt", "yuv420p"),
+                        master_has_b_frames=baseline.get("master_has_b_frames", 2),
+                        output_folder=output_folder,
+                        final_output_path=final_output_path,
+                        total_duration=total_duration
+                    )
+                else:
+                    log_terminal(f"[Merge] Mode: MAJORITY MISMATCHED ({len(mismatched_indices)}/{len(video_paths)}) -> Full Re-encode")
+                    target_w = baseline.get("master_w", 1280)
+                    target_h = baseline.get("master_h", 720)
+                    log_terminal(f"[Merge] Target Resolution: {target_w}x{target_h}")
+                    execute_batch_chunking_merge(video_paths, output_folder, final_output_path, target_w, target_h, total_duration)
 
-        with state_lock:
-            if split_state.get("status") == "processing":
-                split_state["status"] = "completed"
+            # Cleanup temp concat list and log file
+            for fpath in [log_file_path, concat_list_path]:
+                if os.path.exists(fpath):
+                    try:
+                        os.remove(fpath)
+                    except Exception:
+                        pass
+
+            with state_lock:
+                if split_state.get("status") == "processing":
+                    split_state["status"] = "completed"
+                    split_state["is_running"] = False
+                    split_state["progress_percent"] = 100
+                    split_state["active_process"] = None
+                    split_state["output_files"] = [{
+                        "partNum": 1,
+                        "filename": output_filename,
+                        "duration_formatted": format_seconds(total_duration),
+                        "filepath": final_output_path
+                    }]
+
+            total_elapsed = int(time.time() - split_state["start_time"])
+            log_terminal(f"[Merge] === MERGE COMPLETED in {total_elapsed}s! Saved to: {final_output_path} ===")
+
+        except Exception as e:
+            hint = explain_ffmpeg_error(str(e))
+            log_terminal(f"[Merge] ERROR: {hint or str(e)}")
+            for fpath in [concat_list_path]:
+                if os.path.exists(fpath):
+                    try:
+                        os.remove(fpath)
+                    except Exception:
+                        pass
+            with state_lock:
+                if split_state.get("status") != "canceled":
+                    split_state["status"] = "error"
                 split_state["is_running"] = False
-                split_state["progress_percent"] = 100
+                split_state["error_message"] = hint or str(e)
                 split_state["active_process"] = None
-                split_state["output_files"] = [{
-                    "partNum": 1,
-                    "filename": output_filename,
-                    "duration_formatted": format_seconds(total_duration),
-                    "filepath": final_output_path
-                }]
 
-        total_elapsed = int(time.time() - split_state["start_time"])
-        log_terminal(f"[Merge] === MERGE COMPLETED in {total_elapsed}s! Saved to: {final_output_path} ===")
 
     except Exception as e:
-        log_terminal(f"[Merge] ERROR: {str(e)}")
-        for fpath in [concat_list_path]:
-            if os.path.exists(fpath):
-                try:
-                    os.remove(fpath)
-                except Exception:
-                    pass
+        # Safety net: setup failures (bad output folder, permissions, ...) must never
+        # leave the job stuck on "processing" (the UI would hang and new jobs get HTTP 400).
+        hint = explain_ffmpeg_error(str(e))
+        log_terminal(f"[Merge] ERROR: {hint or str(e)}")
         with state_lock:
-            split_state["status"] = "error"
+            if split_state.get("status") != "canceled":
+                split_state["status"] = "error"
             split_state["is_running"] = False
-            split_state["error_message"] = str(e)
+            split_state["error_message"] = hint or str(e)
             split_state["active_process"] = None
 
 def get_optimal_target_resolution(video_paths: list[str]) -> tuple[int, int]:
@@ -1391,8 +1511,12 @@ def get_optimal_target_resolution(video_paths: list[str]) -> tuple[int, int]:
     best_h = best_h if best_h % 2 == 0 else best_h + 1
     return best_w, best_h
 
-def run_ffmpeg_merge_process(cmd: list[str], log_file_path: str, total_duration: float, is_lossless: bool):
-    """Execute FFmpeg process and track progress with real-time terminal logging."""
+def run_ffmpeg_merge_process(cmd: list[str], log_file_path: str, total_duration: float, is_lossless: bool, raise_on_error: bool = True) -> int:
+    """Execute FFmpeg process and track progress with real-time terminal logging.
+
+    Returns the FFmpeg return code. When raise_on_error is False the caller decides
+    whether a non-zero return code is fatal (used by the lossless retry chain).
+    """
     global split_state
     last_logged_pct = -1
 
@@ -1456,6 +1580,9 @@ def run_ffmpeg_merge_process(cmd: list[str], log_file_path: str, total_duration:
                         pass
 
         process.wait()
+        with state_lock:
+            if split_state.get("active_process") is process:
+                split_state["active_process"] = None
 
     if process.returncode != 0 and split_state.get("status") != "canceled":
         err_text = "Unknown FFmpeg error"
@@ -1466,13 +1593,155 @@ def run_ffmpeg_merge_process(cmd: list[str], log_file_path: str, total_duration:
                 err_text = "\n".join(non_progress) if non_progress else "\n".join(lines[-10:])
         except Exception:
             pass
+        hint = explain_ffmpeg_error(err_text)
         log_terminal("=" * 65)
         log_terminal(f"[Merge:ERROR] ❌ FFmpeg ERROR occurred during merge (Exit code: {process.returncode})!")
         log_terminal("Error details from FFmpeg:")
         for l in err_text.splitlines():
             log_terminal(f"  {l}")
+        if hint:
+            log_terminal(f"[Merge:ERROR] 💡 {hint}")
         log_terminal("=" * 65)
-        raise Exception(f"FFmpeg error: {err_text}")
+        if raise_on_error:
+            raise Exception(f"{hint or 'FFmpeg error'}\n--- FFmpeg output ---\n{err_text}")
+
+    return process.returncode
+
+def _concat_list_file(video_paths: list[str], list_path: str) -> str:
+    """Write a FFmpeg concat-demuxer list file and return its path."""
+    with open(list_path, "w", encoding="utf-8") as f:
+        for p in video_paths:
+            norm_p = os.path.abspath(p).replace("\\", "/")
+            escaped_p = norm_p.replace("'", "'\\''")
+            f.write(f"file '{escaped_p}'\n")
+    return list_path
+
+def _lossless_concat_cmd(list_path: str, out_path: str, flags: tuple) -> list[str]:
+    return [
+        get_ffmpeg_cmd(), "-y",
+        *flags,
+        "-f", "concat",
+        "-safe", "0",
+        "-i", list_path,
+        "-c", "copy",
+        out_path,
+    ]
+
+def remux_videos_to_mpegts(video_paths: list[str], temp_dir: str, tag: str) -> list[str]:
+    """Losslessly remux every input into MPEG-TS so the concat timeline is always continuous."""
+    ts_paths = []
+    for idx, src in enumerate(video_paths):
+        ts_path = os.path.join(temp_dir, f"ts_{tag}_{idx:05d}.ts")
+        cmd = [
+            get_ffmpeg_cmd(), "-y",
+            "-fflags", "+genpts",
+            "-i", src,
+            "-map", "0:v:0?", "-map", "0:a:0?",
+            "-c", "copy",
+            "-muxdelay", "0",
+            "-muxpreload", "0",
+            "-f", "mpegts",
+            ts_path,
+        ]
+        result = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if result.returncode != 0:
+            raise Exception(f"មិនអាចបម្លែងឯកសារទី {idx + 1} ({os.path.basename(src)}) ទៅ MPEG-TS បានឡើយ។")
+        ts_paths.append(ts_path)
+    return ts_paths
+
+def perform_lossless_merge(
+    video_paths: list[str],
+    concat_list_path: str,
+    out_path: str,
+    duration: float,
+    log_path: str,
+    temp_dir: str,
+    tag: str,
+    reason: str = ""
+) -> bool:
+    """Try every lossless strategy in order; return True as soon as one produces a file.
+
+    Chain: plain stream copy -> stream copy with timestamp repair -> MPEG-TS remux + concat.
+    Raises the last FFmpeg error (with a friendly Khmer message) when nothing worked.
+    """
+    global split_state
+
+    def _cleanup_partial():
+        for bad in (out_path, out_path + ".ts"):
+            if os.path.exists(bad):
+                try:
+                    os.remove(bad)
+                except Exception:
+                    pass
+
+    def _is_canceled() -> bool:
+        with state_lock:
+            return split_state.get("status") == "canceled"
+
+    def _read_log_tail(path: str) -> str:
+        try:
+            with open(path, "r", encoding="utf-8", errors="ignore") as lf:
+                return lf.read()[-4000:]
+        except Exception:
+            return ""
+
+    attempts = [
+        ("Attempt 1/3 – Lossless (stream copy)", tuple(LOSSLESS_BASE_FLAGS)),
+        ("Attempt 2/3 – Lossless with timestamp repair", tuple(LOSSLESS_REPAIR_FLAGS)),
+    ]
+
+    last_error = ""
+    for label, flags in attempts:
+        if _is_canceled():
+            raise Exception("ការងារត្រូវបានបោះបង់ (Canceled)")
+        _cleanup_partial()
+        log_terminal(f"[Merge:Retry] {label}{(' | ' + reason) if reason else ''}")
+        cmd = _lossless_concat_cmd(concat_list_path, out_path, flags)
+        code = run_ffmpeg_merge_process(cmd, log_path, duration, is_lossless=True, raise_on_error=False)
+        if code == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            return True
+        last_error = _read_log_tail(log_path) or "FFmpeg exited with a non-zero status"
+        if _is_canceled():
+            raise Exception("ការងារត្រូវបានបោះបង់ (Canceled)")
+
+    # Attempt 3: MPEG-TS remux (very robust, still lossless / no re-encode)
+    if _is_canceled():
+        raise Exception("ការងារត្រូវបានបោះបង់ (Canceled)")
+    _cleanup_partial()
+    log_terminal("[Merge:Retry] Attempt 3/3 – Lossless via MPEG-TS remux (rebuilds a clean timeline)")
+    ts_paths = remux_videos_to_mpegts(video_paths, temp_dir, tag)
+    try:
+        ts_list = _concat_list_file(ts_paths, os.path.join(temp_dir, f"ts_concat_{tag}.txt"))
+        cmd = [
+            get_ffmpeg_cmd(), "-y",
+            "-fflags", "+genpts",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", ts_list,
+            "-c", "copy",
+            "-bsf:a", "aac_adtstoasc",
+            "-avoid_negative_ts", "make_zero",
+            "-max_interleave_delta", "0",
+            out_path,
+        ]
+        code = run_ffmpeg_merge_process(cmd, log_path, duration, is_lossless=True, raise_on_error=False)
+        if code == 0 and os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+            log_terminal("[Merge:Retry] ✅ Lossless merge succeeded using the MPEG-TS strategy.")
+            return True
+        last_error = _read_log_tail(log_path) or last_error
+    finally:
+        for ts in ts_paths:
+            if os.path.exists(ts):
+                try:
+                    os.remove(ts)
+                except Exception:
+                    pass
+
+    _cleanup_partial()
+    hint = explain_ffmpeg_error(last_error) or (
+        "ការភ្ជាប់បែប Lossless បរាជ័យគ្រប់វិធី។ សូមជ្រើស Mode “Auto / Selective Auto-Fix” ឬ “Full Re-encode”។"
+    )
+    raise Exception(hint)
 
 def execute_selective_autofix_merge(
     video_paths: list[str],
@@ -1637,28 +1906,21 @@ def execute_selective_autofix_merge(
             split_state["progress_percent"] = 90
             split_state["current_part"] = num_to_fix
 
-        concat_list_path = os.path.join(temp_dir, f"smartfix_concat_{int(time.time()*1000)}.txt")
+        concat_list_path = _concat_list_file(normalized_paths, os.path.join(temp_dir, f"smartfix_concat_{int(time.time()*1000)}.txt"))
         temp_files_created.append(concat_list_path)
-        with open(concat_list_path, "w", encoding="utf-8") as f:
-            for p in normalized_paths:
-                norm_p = os.path.abspath(p).replace("\\", "/")
-                escaped_p = norm_p.replace("'", "'\\''")
-                f.write(f"file '{escaped_p}'\n")
-
-        concat_cmd = [
-            get_ffmpeg_cmd(), "-y",
-            "-fflags", "+genpts",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", concat_list_path,
-            "-c", "copy",
-            "-avoid_negative_ts", "make_zero",
-            final_output_path
-        ]
         log_final_path = os.path.join(temp_dir, f"smartfix_final_{int(time.time()*1000)}.log")
         temp_files_created.append(log_final_path)
 
-        run_ffmpeg_merge_process(concat_cmd, log_final_path, total_duration, is_lossless=True)
+        perform_lossless_merge(
+            video_paths=normalized_paths,
+            concat_list_path=concat_list_path,
+            out_path=final_output_path,
+            duration=total_duration,
+            log_path=log_final_path,
+            temp_dir=temp_dir,
+            tag="smartfix",
+            reason="after normalizing mismatched episodes",
+        )
 
     finally:
         # Clean up temporary files
@@ -1725,12 +1987,7 @@ def execute_multi_part_merge(
         log_terminal(f"[Splitify:MultiPart] [{p_idx + 1}/{total_parts}] Merging {part_range} ({len(part_paths)} episodes) -> {part_out_fn}...")
 
         # Concat list for this part
-        part_concat_path = os.path.join(temp_dir, f"part_concat_{int(time.time()*1000)}_{p_idx}.txt")
-        with open(part_concat_path, "w", encoding="utf-8") as f:
-            for p in part_paths:
-                norm_p = os.path.abspath(p).replace("\\", "/")
-                escaped_p = norm_p.replace("'", "'\\''")
-                f.write(f"file '{escaped_p}'\n")
+        part_concat_path = _concat_list_file(part_paths, os.path.join(temp_dir, f"part_concat_{int(time.time()*1000)}_{p_idx}.txt"))
 
         log_file_path = os.path.join(temp_dir, f"part_log_{int(time.time()*1000)}_{p_idx}.log")
 
@@ -1741,19 +1998,26 @@ def execute_multi_part_merge(
         start_p_t = time.time()
         try:
             if is_part_lossless:
-                log_terminal(f"[Splitify:MultiPart] [{p_idx + 1}/{total_parts}] 100% Uniform specs -> Instant Lossless Stream Copy...")
-                cmd = [
-                    get_ffmpeg_cmd(), "-y",
-                    "-fflags", "+genpts",
-                    "-f", "concat",
-                    "-safe", "0",
-                    "-i", part_concat_path,
-                    "-c", "copy",
-                    "-avoid_negative_ts", "make_zero",
-                    part_out_path
-                ]
-                run_ffmpeg_merge_process(cmd, log_file_path, part_dur, is_lossless=True)
-            else:
+                log_terminal(f"[Splitify:MultiPart] [{p_idx + 1}/{total_parts}] Uniform specs -> Lossless Stream Copy (auto-recovery enabled)...")
+                try:
+                    perform_lossless_merge(
+                        video_paths=part_paths,
+                        concat_list_path=part_concat_path,
+                        out_path=part_out_path,
+                        duration=part_dur,
+                        log_path=log_file_path,
+                        temp_dir=temp_dir,
+                        tag=f"part{p_idx + 1}",
+                        reason=part_range,
+                    )
+                except Exception as lossless_err:
+                    if split_state.get("status") == "canceled":
+                        raise
+                    log_terminal(f"[Splitify:MultiPart] [{p_idx + 1}/{total_parts}] ⚠️ Lossless failed ({lossless_err})")
+                    log_terminal(f"[Splitify:MultiPart] [{p_idx + 1}/{total_parts}] ↩ Falling back to Selective Auto-Fix...")
+                    is_part_lossless = False
+
+            if not is_part_lossless:
                 log_terminal(f"[Splitify:MultiPart] [{p_idx + 1}/{total_parts}] Mismatched specs detected ({len(part_mismatches)}/{len(part_paths)}) -> Selective Auto-Fix...")
                 execute_selective_autofix_merge(
                     video_paths=part_paths,
@@ -1786,6 +2050,15 @@ def execute_multi_part_merge(
                 split_state["output_files"] = list(generated_files)
                 split_state["progress_percent"] = int(((p_idx + 1) / total_parts) * 100)
 
+        except Exception:
+            # Never leave a half-written part file behind for the user to trip over
+            if os.path.exists(part_out_path):
+                try:
+                    os.remove(part_out_path)
+                    log_terminal(f"[Splitify:MultiPart] Removed incomplete file: {part_out_fn}")
+                except Exception:
+                    pass
+            raise
         finally:
             for fpath in [part_concat_path, log_file_path]:
                 if os.path.exists(fpath):
@@ -1948,32 +2221,19 @@ def execute_batch_chunking_merge(video_paths: list[str], output_folder: str, fin
 
         # Now merge all chunk files losslessly
         log_terminal(f"[Merge:Batch] All {total_chunks} chunks ready. Performing final lossless stream copy merge...")
-        chunks_list_path = os.path.join(temp_dir, f"chunks_list_{int(time.time()*1000)}.txt")
-        with open(chunks_list_path, "w", encoding="utf-8") as f:
-            for cp in chunk_output_files:
-                norm_cp = os.path.abspath(cp).replace("\\", "/")
-                escaped_cp = norm_cp.replace("'", "'\\''")
-                f.write(f"file '{escaped_cp}'\n")
-
-        cmd_final = [
-            get_ffmpeg_cmd(), "-y",
-            "-fflags", "+genpts",
-            "-f", "concat",
-            "-safe", "0",
-            "-i", chunks_list_path,
-            "-c", "copy",
-            "-avoid_negative_ts", "make_zero",
-            final_output_path
-        ]
+        chunks_list_path = _concat_list_file(chunk_output_files, os.path.join(temp_dir, f"chunks_list_{int(time.time()*1000)}.txt"))
         log_final_path = os.path.join(temp_dir, "log_final_merge.log")
-        with open(log_final_path, "wb") as log_file:
-            proc_final = subprocess.Popen(cmd_final, stdout=subprocess.DEVNULL, stderr=log_file)
-            with state_lock:
-                split_state["active_process"] = proc_final
-            proc_final.wait()
 
-        if proc_final.returncode != 0 and split_state.get("status") != "canceled":
-            raise Exception("Failed final concat of normalized chunks.")
+        perform_lossless_merge(
+            video_paths=chunk_output_files,
+            concat_list_path=chunks_list_path,
+            out_path=final_output_path,
+            duration=total_duration,
+            log_path=log_final_path,
+            temp_dir=temp_dir,
+            tag="batch_final",
+            reason=f"{total_chunks} normalized chunks",
+        )
 
         if os.path.exists(chunks_list_path):
             try: os.remove(chunks_list_path)
